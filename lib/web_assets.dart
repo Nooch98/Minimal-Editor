@@ -1,0 +1,108 @@
+class WebAssets {
+  static const String htmlContent = '''
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; background-color: #1e1e1e; }
+        #container { width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
+    <script>
+        require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+        
+        require(['vs/editor/editor.main'], function() {
+            window.editor = monaco.editor.create(document.getElementById('container'), {
+                value: '// IDE Listo...',
+                language: 'dart',
+                theme: 'vs-dark',
+                automaticLayout: true
+            });
+
+            // 1. BLOQUEAR Ctrl+S en el navegador para que no intente guardar el HTML
+            window.addEventListener('keydown', function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.keyCode == 83) {
+                    e.preventDefault();
+                    // Opcional: avisar a Flutter que se presionó Ctrl+S
+                    if (window.flutter_inappwebview) {
+                        window.flutter_inappwebview.callHandler('onSaveCommand');
+                    }
+                }
+            });
+
+            window.dispatchEvent(new CustomEvent('editorReady'));
+        });
+
+        window.setEditorValue = function(data) {
+          if (!window.editor) return;
+
+          let language = data.lang;
+          
+          const languageMap = {
+            'js': 'javascript',
+            'ts': 'typescript',
+            'yml': 'yaml',
+            'yaml': 'yaml',
+            'md': 'markdown',
+            'ps1': 'powershell',
+            'py': 'python',
+            'pyw': 'python',
+            'rb': 'ruby',
+            'cs': 'csharp',
+            'cpp': 'cpp',
+            'c': 'c',
+            'h': 'cpp',
+            'java': 'java',
+            'php': 'php',
+            'html': 'html',
+            'htm': 'html',
+            'css': 'css',
+            'scss': 'scss',
+            'less': 'less',
+            'json': 'json',
+            'xml': 'xml',
+            'sql': 'sql',
+            'sh': 'shell',
+            'bash': 'shell',
+            'bat': 'bat',
+            'go': 'go',
+            'rs': 'rust',
+            'kt': 'kotlin',
+            'ktm': 'kotlin',
+            'swift': 'swift',
+            'dart': 'dart'
+        };
+          
+          if (languageMap[language]) {
+              language = languageMap[language];
+          }
+
+          var newModel = monaco.editor.createModel(data.code, language);
+          
+          newModel.onDidChangeContent(function(e) {
+              if (window.flutter_inappwebview) {
+                  window.flutter_inappwebview.callHandler('onContentChanged');
+              }
+          });
+
+          var oldModel = window.editor.getModel();
+          window.editor.setModel(newModel);
+          
+          if (oldModel) oldModel.dispose();
+      };
+
+        window.defineCustomTheme = function(themeName, themeJson) {
+            try {
+                monaco.editor.defineTheme(themeName, themeJson);
+                monaco.editor.setTheme(themeName);
+            } catch (e) { console.error(e); }
+        };
+    </script>
+</body>
+</html>
+  ''';
+}
