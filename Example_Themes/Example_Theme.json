@@ -1,0 +1,37 @@
+{
+  // --- MONACO EDITOR SETTINGS ---
+  // "base": Defines the base theme style ('vs-dark' or 'vs')
+  "base": "vs-dark",
+  // "inherit": If true, inherits base Monaco colors
+  "inherit": true,
+  // "rules": Defines syntax highlighting colors for code tokens
+  "rules": [
+    { "token": "comment", "foreground": "667788", "fontStyle": "italic" },
+    { "token": "string", "foreground": "f5ff00" },
+    { "token": "keyword", "foreground": "ff00ff", "fontStyle": "bold" },
+    { "token": "number", "foreground": "00e5ff" },
+    { "token": "type", "foreground": "00ff9d" }
+  ],
+  // "colors": Defines visual colors within the Monaco editor area
+  "colors": {
+    "editor.background": "#0a0a0f",
+    "editor.foreground": "#ffffff",
+    "editor.lineHighlightBackground": "#1c1c28",
+    "editorCursor.foreground": "#00e5ff",
+    "editor.selectionBackground": "#ff00ff66",
+    "activityBar.background": "#0a0a0f",
+    "sideBar.background": "#12121c"
+  },
+  
+  // --- FLUTTER UI SETTINGS ---
+  // These values control the colors of the application widgets (Sidebar, Tabs, etc.)
+  // IMPORTANT: Must be integer values (ARGB) representing color in 0xAARRGGBB format
+  "ui": {
+    "bg": 4278716431,          // Main background
+    "activityBar": 4278788939, // Activity bar
+    "sidebar": 4279308316,     // File explorer panel
+    "tabBar": 4279308316,      // Tab bar
+    "tabActive": 4278716431,   // Active tab
+    "tabInactive": 4280361256  // Inactive tab
+  }
+}
