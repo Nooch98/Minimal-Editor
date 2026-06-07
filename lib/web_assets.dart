@@ -14,20 +14,51 @@ class WebAssets {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs/loader.min.js"></script>
     <script>
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.44.0/min/vs' }});
+        window.editor = null;
+        window.isEditorReady = false;
+        window.pendingQueue = [];
         
         require(['vs/editor/editor.main'], function() {
             window.editor = monaco.editor.create(document.getElementById('container'), {
-                value: '// IDE Listo...',
+                value: '// IDE Ready...',
                 language: 'dart',
                 theme: 'vs-dark',
                 automaticLayout: true
             });
 
-            // 1. BLOQUEAR Ctrl+S en el navegador para que no intente guardar el HTML
+            window.isEditorReady = true;
+
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('onEditorReady');
+            }
+
+            while(window.pendingQueue.length > 0) {
+                window.pendingQueue.shift()();
+            }
+
+            window.editor.onDidChangeCursorPosition((e) => {
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('onCursorChanged', {
+                        line: e.position.lineNumber,
+                        column: e.position.column
+                    });
+                }
+            });
+
+            window.editor.onDidChangeModelDecorations(() => {
+                if (window.flutter_inappwebview) {
+                    const markers = monaco.editor.getModelMarkers({});
+                    window.flutter_inappwebview.callHandler('onMarkersChanged', markers.length);
+                }
+            });
+
+            while(window.pendingQueue.length > 0) {
+                window.pendingQueue.shift()();
+            }
+
             window.addEventListener('keydown', function(e) {
                 if ((e.ctrlKey || e.metaKey) && e.keyCode == 83) {
                     e.preventDefault();
-                    // Opcional: avisar a Flutter que se presionó Ctrl+S
                     if (window.flutter_inappwebview) {
                         window.flutter_inappwebview.callHandler('onSaveCommand');
                     }
@@ -38,44 +69,24 @@ class WebAssets {
         });
 
         window.setEditorValue = function(data) {
+          if (!window.isEditorReady) {
+              window.pendingQueue.push(() => window.setEditorValue(data));
+              return;
+          }
           if (!window.editor) return;
 
           let language = data.lang;
           
           const languageMap = {
-            'js': 'javascript',
-            'ts': 'typescript',
-            'yml': 'yaml',
-            'yaml': 'yaml',
-            'md': 'markdown',
-            'ps1': 'powershell',
-            'py': 'python',
-            'pyw': 'python',
-            'rb': 'ruby',
-            'cs': 'csharp',
-            'cpp': 'cpp',
-            'c': 'c',
-            'h': 'cpp',
-            'java': 'java',
-            'php': 'php',
-            'html': 'html',
-            'htm': 'html',
-            'css': 'css',
-            'scss': 'scss',
-            'less': 'less',
-            'json': 'json',
-            'xml': 'xml',
-            'sql': 'sql',
-            'sh': 'shell',
-            'bash': 'shell',
-            'bat': 'bat',
-            'go': 'go',
-            'rs': 'rust',
-            'kt': 'kotlin',
-            'ktm': 'kotlin',
-            'swift': 'swift',
-            'dart': 'dart'
-        };
+            'js': 'javascript', 'ts': 'typescript', 'yml': 'yaml', 'yaml': 'yaml',
+            'md': 'markdown', 'ps1': 'powershell', 'py': 'python', 'pyw': 'python',
+            'rb': 'ruby', 'cs': 'csharp', 'cpp': 'cpp', 'c': 'c', 'h': 'cpp',
+            'java': 'java', 'php': 'php', 'html': 'html', 'htm': 'html',
+            'css': 'css', 'scss': 'scss', 'less': 'less', 'json': 'json',
+            'xml': 'xml', 'sql': 'sql', 'sh': 'shell', 'bash': 'shell',
+            'bat': 'bat', 'go': 'go', 'rs': 'rust', 'kt': 'kotlin',
+            'ktm': 'kotlin', 'swift': 'swift', 'dart': 'dart'
+          };
           
           if (languageMap[language]) {
               language = languageMap[language];
@@ -93,13 +104,24 @@ class WebAssets {
           window.editor.setModel(newModel);
           
           if (oldModel) oldModel.dispose();
-      };
+        };
 
         window.defineCustomTheme = function(themeName, themeJson) {
-            try {
+            if (typeof monaco !== 'undefined') {
                 monaco.editor.defineTheme(themeName, themeJson);
                 monaco.editor.setTheme(themeName);
-            } catch (e) { console.error(e); }
+            } else {
+                console.warn("Monaco isn't ready yet, still waiting...");
+                setTimeout(() => window.defineCustomTheme(themeName, themeJson), 500);
+            }
+        };
+
+        window.setEditorOptions = function(options) {
+            if (window.editor) {
+                window.editor.updateOptions(options);
+            } else {
+                setTimeout(() => window.setEditorOptions(options), 200);
+            }
         };
     </script>
 </body>
