@@ -2,6 +2,8 @@
 
 A lightwight, high-performance code editor built deom scratch with flutter
 
+<img width="1918" height="1052" alt="Captura de pantalla 2026-06-07 155939" src="https://github.com/user-attachments/assets/afcbfbae-0cb8-4f4d-a29b-201ba80707bd" />
+
 **Status: 🚧 Early Development / Pre-alpha**
 
 An independent project focused on providing a clean, distraction-free enviroment for developers who prioritize system efficiency.
