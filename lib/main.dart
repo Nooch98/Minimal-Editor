@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'web_assets.dart';
 
 class OpenFile {
@@ -35,20 +36,61 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   bool _isSidebarVisible = true;
   double _sidebarWidth = 250.0;
   String? _currentRootPath;
+  double _fontSize = 14.0;
+  String _fontFamily = 'Consolas';
+  int _currentLine = 1;
+  int _currentColumn = 1;
+  int _errorCount = 0;
+  String _currentLang = "text";
+  bool _isEditorInitialized = false;
 
-  // Default UI color map
   Map<String, dynamic> _uiColors = {
     "bg": 0xFF1e1e1e,
     "sidebar": 0xFF252526,
     "tabBar": 0xFF252526,
     "tabActive": 0xFF1e1e1e,
     "tabInactive": 0xFF2d2d2d,
+    "statusBar": 0xFF007acc,
   };
 
   @override
   void initState() {
     super.initState();
     _loadSavedThemes();
+    _loadInitialSettings(); 
+  }
+
+  Future<void> _saveSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme', _currentTheme);
+    await prefs.setString('fontFamily', _fontFamily);
+    await prefs.setDouble('fontSize', _fontSize);
+  }
+
+  Future<void> _loadInitialSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _fontSize = prefs.getDouble('fontSize') ?? 14.0;
+      _fontFamily = prefs.getString('fontFamily') ?? 'Consolas';
+      _currentTheme = prefs.getString('theme') ?? 'vs-dark';
+    });
+    
+    await _loadUiColors(_currentTheme);
+    _updateEditorConfig();
+  }
+
+  Future<void> _applySavedConfig() async {
+    if (!_isEditorInitialized) return;
+    if (['vs-dark', 'vs', 'hc-black'].contains(_currentTheme)) {
+      _webViewController?.evaluateJavascript(source: "monaco.editor.setTheme('$_currentTheme')");
+    } else {
+      File themeFile = File('${Directory.current.path}/themes/$_currentTheme.json');
+      if (await themeFile.exists()) {
+        String jsonContent = await themeFile.readAsString();
+        _webViewController?.evaluateJavascript(source: "window.defineCustomTheme('$_currentTheme', $jsonContent);");
+      }
+    }
+    _updateEditorConfig(); 
   }
 
   Future<void> _loadUiColors(String themeName) async {
@@ -177,6 +219,13 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     if (_activeTabIndex != -1 && _webViewController != null) {
       final fileData = _openFiles[_activeTabIndex];
       String extension = p.extension(fileData.file.path).replaceAll('.', '');
+      
+      setState(() {
+        _currentLang = extension;
+        _currentLine = 1;
+        _currentColumn = 1;
+      });
+
       final payload = jsonEncode({"code": fileData.content, "lang": extension});
 
       _webViewController!.evaluateJavascript(source: "window.setEditorValue($payload)");
@@ -208,6 +257,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   }
 
   void _openSettings() {
+    final TextEditingController fontController = TextEditingController(text: _fontFamily);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -216,57 +266,110 @@ class _EditorScaffoldState extends State<EditorScaffold> {
           canvasColor: Color(_uiColors["sidebar"]),
           textTheme: Theme.of(context).textTheme.apply(bodyColor: Colors.white),
         ),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Color(_uiColors["sidebar"]),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text("Editor Settings", 
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)
+        child: StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Color(_uiColors["sidebar"]),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
               ),
-              const SizedBox(height: 10),
-              DropdownButton<String>(
-                value: _currentTheme,
-                isExpanded: true,
-                dropdownColor: Color(_uiColors["sidebar"]),
-                style: const TextStyle(color: Colors.white),
-                items: _themes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (val) async {
-                  if (val == null) return;
-                  setState(() => _currentTheme = val);
-                  await _loadUiColors(val);
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Editor Settings", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white)),
                   
-                  if (['vs-dark', 'vs', 'hc-black'].contains(val)) {
-                    _webViewController?.evaluateJavascript(source: "monaco.editor.setTheme('$val')");
-                  } else {
-                    File themeFile = File('${Directory.current.path}/themes/$val.json');
-                    if (await themeFile.exists()) {
-                      String jsonContent = await themeFile.readAsString();
-                      _webViewController?.evaluateJavascript(source: "window.defineCustomTheme('$val', $jsonContent);");
-                    }
-                  }
-                  Navigator.pop(ctx);
-                },
+                  DropdownButton<String>(
+                    value: _currentTheme,
+                    isExpanded: true,
+                    dropdownColor: Color(_uiColors["sidebar"]),
+                    items: _themes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                    onChanged: (val) async {
+                      if (val == null) return;
+                      setModalState(() => _currentTheme = val);
+                      setState(() => _currentTheme = val);
+                      await _loadUiColors(val);
+                      if (['vs-dark', 'vs', 'hc-black'].contains(val)) {
+                        _webViewController?.evaluateJavascript(source: "monaco.editor.setTheme('$val')");
+                      } else {
+                        File themeFile = File('${Directory.current.path}/themes/$val.json');
+                        if (await themeFile.exists()) {
+                          String jsonContent = await themeFile.readAsString();
+                          _webViewController?.evaluateJavascript(source: "window.defineCustomTheme('$val', $jsonContent);");
+                        }
+                      }
+                    },
+                  ),
+                  
+                  TextField(
+                    controller: fontController,
+                    decoration: const InputDecoration(labelText: "Font Family", labelStyle: TextStyle(color: Colors.white70)),
+                    style: const TextStyle(color: Colors.white),
+                    onSubmitted: (val) {
+                      setState(() => _fontFamily = val);
+                      _updateEditorConfig();
+                    },
+                  ),
+                  
+                  Text("Font Size: ${_fontSize.toInt()}", style: const TextStyle(color: Colors.white70)),
+                  Slider(
+                    value: _fontSize, min: 8, max: 30,
+                    onChanged: (val) {
+                      setModalState(() => _fontSize = val);
+                      setState(() => _fontSize = val);
+                      _updateEditorConfig();
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.add, color: Colors.white), 
+                      label: const Text("Create New Theme", style: TextStyle(color: Colors.white)), 
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _showCreateThemeDialog(context);
+                      }
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await _saveSettings(); 
+                        Navigator.pop(context);
+                      },
+                      child: const Text("Save & Close"),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.add), 
-                label: const Text("Create New Theme"), 
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  _showCreateThemeDialog(context);
-                }
-              )
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
+  }
+
+  void _updateEditorConfig() async {
+    if (_webViewController == null) return;
+
+    final options = {
+      "fontSize": _fontSize.toDouble(),
+      "fontFamily": _fontFamily,
+    };
+
+    final jsCode = "window.setEditorOptions(${jsonEncode(options)});";
+    _webViewController!.evaluateJavascript(source: jsCode);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('fontSize', _fontSize);
+    await prefs.setString('fontFamily', _fontFamily);
   }
 
   void _showCreateThemeDialog(BuildContext context) {
@@ -366,6 +469,37 @@ class _EditorScaffoldState extends State<EditorScaffold> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBar() {
+    return Container(
+      height: 25,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      color: Color(_uiColors["statusBar"] ?? 0xFF007acc), 
+      child: Row(
+        children: [
+          if (_errorCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 10),
+              child: Row(children: [
+                const Icon(Icons.error, size: 14, color: Colors.white70), 
+                Text(" $_errorCount", style: const TextStyle(color: Colors.white, fontSize: 12))
+              ]),
+            ),
+          Text(
+            _activeTabIndex != -1 ? p.extension(_openFiles[_activeTabIndex].file.path).replaceAll('.', '').toUpperCase() : "TEXT",
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          const Spacer(),
+          const Text("UTF-8", style: TextStyle(color: Colors.white70, fontSize: 12)),
+          const SizedBox(width: 15),
+          Text(
+            "Ln $_currentLine, Col $_currentColumn", 
+            style: const TextStyle(color: Colors.white70, fontSize: 12)
+          ),
+        ],
       ),
     );
   }
@@ -527,15 +661,40 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                       initialData: InAppWebViewInitialData(data: WebAssets.htmlContent),
                       onWebViewCreated: (controller) {
                         _webViewController = controller;
+
+                        _webViewController?.addJavaScriptHandler(
+                          handlerName: 'onEditorReady', 
+                          callback: (args) {
+                            _isEditorInitialized = true;                            
+                            _applySavedConfig();
+                          }
+                        );
+                        
                         _webViewController?.addJavaScriptHandler(handlerName: 'onContentChanged', callback: (args) {
-                          if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) setState(() => _openFiles[_activeTabIndex].isDirty = true);
+                          if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) {
+                            setState(() => _openFiles[_activeTabIndex].isDirty = true);
+                          }
+                        });                        
+                        
+                        _webViewController?.addJavaScriptHandler(handlerName: 'onSaveCommand', callback: (args) => _saveFile());                        
+                        
+                        _webViewController?.addJavaScriptHandler(handlerName: 'onCursorChanged', callback: (args) {
+                          setState(() {
+                            _currentLine = args[0]['line'];
+                            _currentColumn = args[0]['column'];
+                          });
                         });
-                        _webViewController?.addJavaScriptHandler(handlerName: 'onSaveCommand', callback: (args) => _saveFile());
+
+                        _webViewController?.addJavaScriptHandler(handlerName: 'onMarkersChanged', callback: (args) {
+                          setState(() => _errorCount = args[0]);
+                        });
+
                         _registerAllThemesToWebView();
                         _syncEditorWithTab();
                       },
                     ),
                   ),
+                  _buildStatusBar(),
                 ],
               ),
             ),
