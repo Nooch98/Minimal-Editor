@@ -32,6 +32,77 @@ The following data was captured while both editors were processing the same sour
 > [!NOTE]
 > *The comparison above demonstrates the memory footprint when opening the same large-scale project file. Minimal Editor maintains a steady, lightweight state, while VS Code's architecture spawns multiple helper processes to manage its environment.*
 
+## Configuration Management
+Minimal Editor uses a dynamic, file-based configuration system. Instead of navigating through complex, nested menu layers, all editor behaviors and visual preferences are managed via a `settings.json` file located in the root of your application folder.
+
+### How it Works
+The application establishes a direct bridge between your `settings.json` file and the **Monaco Editor** engine.
+
+1. **Dynamic Sync:** Any changes made to the `settings.json` file are automatically detected and reflected in the editor instance in real-time.
+2. **Standardized Schema:** Since we use the industry-standard Monaco Editor engine, you can apply any configuration supported by the [Monaco Editor API.](https://microsoft.github.io/monaco-editor/typedoc/index.html)
+3. **No Bloat:** By keeping settings as a simple JSON file, we avoid the overhead of heavy configuration databases or background management services.
+
+#### Customizing your Experience
+To customize the editor, simply modify the `settings.json` file. Here is an example of the available flexibility:
+
+```json
+{
+  "theme": "vs-dark",
+  "fontSize": 13,
+  "fontFamily": "CaskaydiaCove Nerd Font",
+  "fontLigatures": "liga",
+  "fontVariations": true,
+  "cursorBlinking": "solid",
+  "wordWrap": "on",
+  "renderLineHighlight": "line",
+  "renderWhitespace": "none",
+  "glyphMargin": true,
+  "overviewRulerBorder": false,
+  "hideCursorInOverviewRuler": true,
+  "fastScrollSensitivity": 10,
+  "scrollbar": {
+    "vertical": "hidden",
+    "horizontal": "hidden"
+  },
+  "guides": {
+    "indentation": true,
+    "bracketPairs": true
+  },
+  "bracketPairColorization": {
+    "enabled": true,
+    "independentColorPoolPerBracketType": true
+  },
+  "autoClosingBrackets": "always",
+  "colorDecorators": true,
+  "multiCursorModifier": "ctrlCmd",
+  "showFoldingControls": "never",
+  "selectionHighlight": true,
+  "quickSuggestions": {
+    "other": true
+  },
+  "suggestOnTriggerCharacters": false,
+  "tabCompletion": "on",
+  "minimap": {
+    "enabled": true,
+    "maxColumn": 50
+  },
+  "stickyScroll": {
+    "scrollWithEditor": true
+  },
+  "largeFileOptimizations": true,
+  "unicodeHighlight": {
+    "nonBasicASCII": false
+  },
+  "tabSize": 4,
+  "insertSpaces": true,
+  "detectIndentation": false
+}
+```
+> Simply save the file, and Minimal Editor will instantly apply your changes.
+
+> [!WARNING]
+> Ensure that your `settings.json` file is properly formatted. If the JSON structure is invalid, the configuration changes will not be applied.
+
 ## Core Features
 
 * **File system Explorer:** Native tree-view for navigating projects with fast, low-latency file operations.
