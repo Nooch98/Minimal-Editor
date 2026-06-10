@@ -1,14 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:codeeditor/ui/search_panel.dart';
 import 'package:codeeditor/ui/web_assets.dart';
 import 'package:codeeditor/utils/file_tree.dart';
 import 'package:codeeditor/utils/open_file.dart';
+import 'package:codeeditor/utils/search_match.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
+
+enum SidebarView { explorer, search }
 
 class EditorScaffold extends StatefulWidget {
   const EditorScaffold({super.key});
@@ -24,6 +28,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   final List<String> _themes = ['vs-dark', 'vs', 'hc-black'];
   String _currentTheme = 'vs-dark';
   bool _isSidebarVisible = true;
+  SidebarView _currentSidebarView = SidebarView.explorer;
   double _sidebarWidth = 250.0;
   String? _currentRootPath;
   double _fontSize = 14.0;
@@ -34,6 +39,10 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   String _currentLang = "text";
   bool _isEditorInitialized = false;
   late FileSystemEntity _settingsWatcher;
+  List<SearchMatch> _searchResults = [];
+  final TextEditingController _searchController = TextEditingController();
+  List<FileSystemEntity> _allFiles = [];
+  bool _isSearching = false;
 
   Map<String, dynamic> _uiColors = {
     "bg": 0xFF1e1e1e,
@@ -49,7 +58,8 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     super.initState();
     _setupWatcher();
     _loadSavedThemes();
-    _loadInitialSettings(); 
+    _loadInitialSettings();
+    _loadSession();
   }
 
   void _setupWatcher() {
@@ -61,6 +71,53 @@ class _EditorScaffoldState extends State<EditorScaffold> {
         _updateEditorConfig();
       }
     });
+  }
+
+  Future<void> _saveSession(String rootPath, List<OpenFile> openFiles, int activeIndex) async {
+    try {
+      final file = File('${Directory.current.path}/session.json');
+      
+      final sessionData = {
+        'last_root_path': rootPath,
+        'open_files': openFiles.map((f) => f.file.path).toList(),
+        'active_index': activeIndex,
+        'timestamp': DateTime.now().toIso8601String(),
+      };
+      
+      final encoder = const JsonEncoder.withIndent('  ');
+      await file.writeAsString(encoder.convert(sessionData));
+    } catch (e) {
+      debugPrint("Error saving the session: $e");
+    }
+  }
+
+  Future<void> _loadSession() async {
+    try {
+      final file = File('${Directory.current.path}/session.json');
+      if (await file.exists()) {
+        final data = json.decode(await file.readAsString());
+        final savedRoot = data['last_root_path'] as String?;
+        final List<dynamic> openFiles = data['open_files'] ?? [];
+        final int activeIndex = data['active_index'] ?? 0;
+
+        if (savedRoot != null && Directory(savedRoot).existsSync()) {
+          setState(() { _currentRootPath = savedRoot; });
+          _refreshFolder();
+
+          for (var path in openFiles) {
+            final f = File(path);
+            if (f.existsSync()) {
+              await _openFile(f);
+            }
+          }
+          
+          setState(() => _activeTabIndex = activeIndex);
+          _syncEditorWithTab();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error loading the session: $e");
+    }
   }
 
   Future<void> _saveSettings() async {
@@ -134,6 +191,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
       if (_activeTabIndex >= _openFiles.length) {
         _activeTabIndex = _openFiles.length - 1;
       }
+      
       if (_openFiles.isEmpty) {
         _activeTabIndex = -1;
         _webViewController?.evaluateJavascript(source: "window.setEditorValue({code: '', lang: 'text'})");
@@ -141,6 +199,8 @@ class _EditorScaffoldState extends State<EditorScaffold> {
         _syncEditorWithTab();
       }
     });
+
+    _saveSession(_currentRootPath!, _openFiles, _activeTabIndex);
   }
 
   Future<void> _loadSavedThemes() async {
@@ -173,26 +233,47 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     }
   }
 
+  Future<void> _saveFileAtIndex(int index) async {
+    if (_webViewController == null) return;
+
+    String code;
+    if (index == _activeTabIndex) {
+      code = await _webViewController!.evaluateJavascript(source: "window.editor.getValue()");
+    } else {
+      code = await _openFiles[index].file.readAsString();
+    }
+
+    File file = _openFiles[index].file;
+    await file.writeAsString(code);
+
+    setState(() {
+      _openFiles[index].isDirty = false;
+    });
+  }
+
   Future<void> _saveFile() async {
-    if (_activeTabIndex != -1 && _webViewController != null) {
-      String code = await _webViewController!.evaluateJavascript(source: "window.editor.getValue()");
-      File file = _openFiles[_activeTabIndex].file;
-      await file.writeAsString(code);
-
-      setState(() {
-        _openFiles[_activeTabIndex].isDirty = false;
-      });
-
+    if (_activeTabIndex != -1) {
+      await _saveFileAtIndex(_activeTabIndex);
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("File saved"), duration: Duration(milliseconds: 500)));
+          const SnackBar(content: Text("File saved"), duration: Duration(milliseconds: 500))
+        );
       }
     }
   }
 
   Future<void> _pickDirectory() async {
+    if (_currentRootPath != null) {
+      bool canProceed = await _confirmChangeProject();
+      if (!canProceed) return;
+    }
+
     String? path = await FilePicker.getDirectoryPath();
+    
     if (path != null) {
+      _resetProjectState();
+      
       setState(() {
         _currentRootPath = path;
       });
@@ -200,9 +281,71 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     }
   }
 
+  void _resetProjectState() {
+    setState(() {
+      _currentRootPath = null;
+      _rootEntities = [];
+      _openFiles.clear();
+      _activeTabIndex = -1;
+    });
+    _webViewController?.evaluateJavascript(source: "window.editor.setValue('');");
+  }
+
+  Future<bool> _confirmChangeProject() async {
+    final dirtyFiles = _openFiles.where((f) => f.isDirty).toList();
+    
+    if (dirtyFiles.isEmpty) return true;
+
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Switch Project"),
+        content: Text("You have ${dirtyFiles.length} unsaved file(s). Do you want to save changes before closing the current project?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              for (int i = 0; i < _openFiles.length; i++) {
+                if (_openFiles[i].isDirty) {
+                  await _saveFileAtIndex(i);
+                }
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text("Save and Continue"),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
   void _refreshFolder() {
     if (_currentRootPath != null) {
-      List<FileSystemEntity> entities = Directory(_currentRootPath!).listSync();
+      final rootDir = Directory(_currentRootPath!);
+
+      final Set<String> ignoreList = {
+        '.dart_tool', '.git', '.gradle', '.idea', '.vscode', 
+        'build', 'node_modules', 'dist', 'packages', '.vcs',
+      };
+
+      final gitIgnoreFile = File(p.join(_currentRootPath!, '.gitignore'));
+      if (gitIgnoreFile.existsSync()) {
+        try {
+          final lines = gitIgnoreFile.readAsLinesSync();
+          for (var line in lines) {
+            final trimmed = line.trim();
+            if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+            ignoreList.add(trimmed.replaceAll('/', '').replaceAll('*', ''));
+          }
+        } catch (e) {
+          debugPrint("The .gitignore file could not be read: $e");
+        }
+      }
+
+      List<FileSystemEntity> entities = rootDir.listSync();
       entities.sort((a, b) {
         bool aIsDir = a is Directory;
         bool bIsDir = b is Directory;
@@ -210,9 +353,33 @@ class _EditorScaffoldState extends State<EditorScaffold> {
         if (!aIsDir && bIsDir) return 1;
         return p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase());
       });
+
+      List<FileSystemEntity> allFiles = [];
+
+      void _recursiveList(Directory dir) {
+        try {
+          for (var entity in dir.listSync()) {
+            final name = p.basename(entity.path);
+            if (entity is Directory) {
+              if (!ignoreList.contains(name)) {
+                _recursiveList(entity);
+              }
+            } else if (entity is File) {
+              allFiles.add(entity);
+            }
+          }
+        } catch (e) {
+          debugPrint("Access denied to: ${dir.path}");
+        }
+      }
+
+      _recursiveList(rootDir);
+
       setState(() {
         _rootEntities = entities;
+        _allFiles = allFiles;
       });
+      _saveSession(_currentRootPath!, _openFiles, _activeTabIndex);
     }
   }
 
@@ -228,6 +395,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
       });
     }
     _syncEditorWithTab();
+    await _saveSession(_currentRootPath!, _openFiles, _activeTabIndex);
   }
 
   void _syncEditorWithTab() {
@@ -255,17 +423,29 @@ class _EditorScaffoldState extends State<EditorScaffold> {
       "inherit": true,
       "rules": [],
       "colors": {"editor.background": "#1e1e1e"},
-      "ui": _uiColors 
+      "ui": {
+        "bg": 4280151070,
+        "activityBar": 4280625958,
+        "sidebar": 4280625958,
+        "tabBar": 4280625958,
+        "tabActive": 4280151070,
+        "tabInactive": 4281216557,
+        "statusBar": 4278248652
+      }
     };
 
     final File themeFile = File('$folderPath/$themeName.json');
     await themeFile.writeAsString(jsonEncode(themeTemplate));
-
     if (!_themes.contains(themeName)) {
       setState(() => _themes.add(themeName));
     }
 
-    _webViewController?.evaluateJavascript(source: "window.defineCustomTheme('$themeName', ${jsonEncode(themeTemplate)});");
+    setState(() {
+      _currentTheme = themeName;
+    });
+
+    await _loadUiColors(themeName);
+    await _applySavedConfig();
     await _openFile(themeFile);
   }
 
@@ -437,6 +617,46 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     );
   }
 
+  void _setAllFiles(List<FileSystemEntity> entities) {
+    _allFiles = entities;
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.isEmpty) {
+      setState(() { _searchResults = []; _isSearching = false; });
+      return;
+    }
+
+    setState(() { _isSearching = true; _searchResults = []; });
+
+    final lowerQuery = query.toLowerCase();
+    List<SearchMatch> matches = [];
+
+    for (var entity in _allFiles) {
+      if (entity is File) {
+        try {
+          final stream = entity.openRead();
+          int lineNumber = 0;
+          
+          await for (var line in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+            lineNumber++;
+            if (line.toLowerCase().contains(lowerQuery)) {
+              matches.add(SearchMatch(entity, lineNumber, line.trim()));
+              if (matches.length > 500) break; 
+            }
+          }
+        } catch (e) {
+          // Ignore Bloqued files or binaries
+        }
+      }
+    }
+
+    setState(() {
+      _searchResults = matches;
+      _isSearching = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -460,13 +680,32 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                   const SizedBox(height: 10),
                   IconButton(
                     icon: const Icon(Icons.file_copy, color: Colors.white, size: 22), 
-                    onPressed: () => setState(() => _isSidebarVisible = !_isSidebarVisible)
+                    onPressed: () => setState(() {
+                      _isSidebarVisible = true;
+                      _currentSidebarView = SidebarView.explorer;
+                    })
+                  ),
+                  const SizedBox(height: 10),
+                  IconButton(
+                    icon: const Icon(Icons.search, color: Colors.white, size: 22),
+                    onPressed: () => setState(() {
+                      _isSidebarVisible = true;
+                      _currentSidebarView = SidebarView.search;
+                    }),
                   ),
                   const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.settings, color: Colors.white, size: 22), 
-                    onPressed: _openSettings
-                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.settings, color: Colors.white, size: 22),
+                    color: Color(_uiColors["sidebar"]),
+                    onSelected: (value) {
+                      if (value == 'settings') _openSettings();
+                      if (value == 'new_theme') _showCreateThemeDialog(context);
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'settings', child: Text("Open Settings", style: TextStyle(color: Colors.white))),
+                      const PopupMenuItem(value: 'new_theme', child: Text("Create New Theme", style: TextStyle(color: Colors.white))),
+                    ],
+                  )
                 ],
               ),
             ),
@@ -474,78 +713,93 @@ class _EditorScaffoldState extends State<EditorScaffold> {
               Container(
                 width: _sidebarWidth,
                 color: Color(_uiColors["sidebar"]),
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: _currentSidebarView == SidebarView.explorer
+                    ? Column(
                         children: [
-                          const Text("EXPLORER", style: TextStyle(color: Colors.white70, fontSize: 11, letterSpacing: 1)),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.note_add, size: 16, color: Colors.white70),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () {
-                                  if (_currentRootPath != null) {
-                                    _showCreateRootItemDialog(context, isFolder: false);
-                                  }
-                                },
-                              ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                icon: const Icon(Icons.create_new_folder, size: 16, color: Colors.white70),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onPressed: () {
-                                  if (_currentRootPath != null) {
-                                    _showCreateRootItemDialog(context, isFolder: true);
-                                  }
-                                },
-                              ),
-                              const Icon(Icons.more_horiz, size: 16, color: Colors.white70),
-                            ],
-                          )
-                        ],
-                      ),
-                    ),
-                    if (_rootEntities.isEmpty)
-                      Column(
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.folder_open, size: 18),
-                            title: const Text("Open Folder", style: TextStyle(fontSize: 12)),
-                            onTap: _pickDirectory,
-                            dense: true,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text("EXPLORER", style: TextStyle(color: Colors.white70, fontSize: 11, letterSpacing: 1)),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.folder_open, size: 16, color: Colors.white70),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      tooltip: "Open Project",
+                                      onPressed: _pickDirectory,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    if (_currentRootPath != null) ...[
+                                      IconButton(
+                                        icon: const Icon(Icons.note_add, size: 16, color: Colors.white70),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => _showCreateRootItemDialog(context, isFolder: false),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        icon: const Icon(Icons.create_new_folder, size: 16, color: Colors.white70),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: () => _showCreateRootItemDialog(context, isFolder: true),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Icon(Icons.more_horiz, size: 16, color: Colors.white70),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                          ListTile(
-                            leading: const Icon(Icons.insert_drive_file, size: 18),
-                            title: const Text("Open File", style: TextStyle(fontSize: 12)),
-                            onTap: () async {
-                              final result = await FilePicker.pickFiles();
-                              if (result != null && result.files.single.path != null) {
-                                _openFile(File(result.files.single.path!));
-                              }
-                            },
-                            dense: true,
-                          )
+                          Expanded(
+                            child: _currentRootPath == null
+                                ? Column(
+                                    children: [
+                                      ListTile(
+                                        leading: Icon(Icons.folder_open, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
+                                        title: Text("Open Folder", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
+                                        onTap: _pickDirectory,
+                                        dense: true,
+                                      ),
+                                      ListTile(
+                                        leading: Icon(Icons.insert_drive_file, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
+                                        title: Text("Open File", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
+                                        onTap: () async {
+                                          final result = await FilePicker.pickFiles();
+                                          if (result != null && result.files.single.path != null) {
+                                            _openFile(File(result.files.single.path!));
+                                          }
+                                        },
+                                        dense: true,
+                                      )
+                                    ],
+                                  )
+                                : ListView(
+                                    children: _rootEntities.map((e) => FileTreeItem(
+                                      entity: e,
+                                      onFileTap: _openFile,
+                                      onAction: _refreshFolder,
+                                      uiColors: _uiColors,
+                                    )).toList(),
+                                  ),
+                          ),
                         ],
                       )
-                    else
-                      Expanded(
-                        child: ListView(
-                          children: _rootEntities.map((e) => FileTreeItem(
-                            entity: e,
-                            onFileTap: _openFile,
-                            onAction: _refreshFolder,
-                            uiColors: _uiColors,
-                          )).toList(),
-                        ),
-                      ),
-                  ],
-                ),
+                      :SearchPanel(
+                      uiColors: _uiColors,
+                      results: _searchResults,
+                      onSearch: _performSearch,
+                      isSearching: _isSearching,
+                      onFileTap: (file, lineNumber) async {
+                        await _openFile(file);
+                        _webViewController?.evaluateJavascript(
+                          source: "window.editor.revealLine($lineNumber); window.editor.setPosition({lineNumber: $lineNumber, column: 1});"
+                        );
+                      },
+                    ),
               ),
               MouseRegion(
                 cursor: SystemMouseCursors.resizeColumn,
