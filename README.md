@@ -2,7 +2,7 @@
 
 A lightwight, high-performance code editor built deom scratch with flutter
 
-<img width="1918" height="1052" alt="Captura de pantalla 2026-06-07 155939" src="https://github.com/user-attachments/assets/afcbfbae-0cb8-4f4d-a29b-201ba80707bd" />
+<img width="1912" height="1032" alt="Captura de pantalla 2026-06-14 052601" src="https://github.com/user-attachments/assets/a8c2c10b-b9f0-4256-9841-e25ae64d7913" />
 
 **Status: 🚧 Early Development / Pre-alpha**
 
@@ -23,14 +23,14 @@ The following data was captured while both editors were processing the same sour
 
 | Feature | Minimal Editor | VS Code |
 | :--- | :---: | :---: |
-| **RAM Usage (10k lines)** | **212.0 MB** | 911.6 MB |
+| **RAM Usage (10k lines)** | **90.4MB** | 910.6 MB |
 | **Background Processes** | 1 | 9+ |
 | **Architecture** | Native Flutter | Electron |
 
-<img width="1914" height="1054" alt="Captura de pantalla 2026-06-06 055847" src="https://github.com/user-attachments/assets/8feeadfc-a202-4659-90fa-fd7e3f71ae69" />
+<img width="1912" height="1032" alt="Captura de pantalla 2026-06-14 053210" src="https://github.com/user-attachments/assets/df24e957-5e2c-4a4f-a50a-2cfef251005c" />
 
 > [!NOTE]
-> *The comparison above demonstrates the memory footprint when opening the same large-scale project file. Minimal Editor maintains a steady, lightweight state, while VS Code's architecture spawns multiple helper processes to manage its environment.*
+> > *The comparison above demonstrates the actual memory footprint. Minimal Editor achieves an incredible ~90MB state by implementing an asynchronous Dart-JS bridge that strips away telemetry, heavy multi-process indexers, and the massive bloat associated with standard Electron wrappers.*
 
 ## Configuration Management
 Minimal Editor uses a dynamic, file-based configuration system. Instead of navigating through complex, nested menu layers, all editor behaviors and visual preferences are managed via a `settings.json` file located in the root of your application folder.
@@ -105,10 +105,13 @@ To customize the editor, simply modify the `settings.json` file. Here is an exam
 
 ## Core Features
 
-* **File system Explorer:** Native tree-view for navigating projects with fast, low-latency file operations.
+* **File system Explorer:** Native tree-view for navigating projects with fast, low-latency file operations and streamlined folder management.
+* **Integrated Version Control ([VCS](https://github.com/Nooch98/Portable-VCS)):** Native workspace integration featuring a custom, encrypted local version control dashboard alongside an optimized Git Remote panel to seamlessly pull and push repository changes.
+* **Exclusive Internal Clipboard:** A dedicated history panel that intercepts copy actions strictly within Monaco Editor. It handles up to 10 historical records in memory without OS clipboard polling overhead, offering undo (`Ctrl+Z`) support on paste.
+* **Reactive Breadcrumbs:** Instant context visualization with a dynamic breadcrumb hierarchy bar placed right below tabs.
+* **Context-Aware Status Bar:** Automatic repository recognition that updates the footer UI to track active Git branches in real time.
 * **Efficient Editing:** Powered by Monaco Editor, providing industry-standard syntax highlighting without the bloat of a full IDE.
 * **Dynamic Theming:** Seamless UI integration that adapts to your custom color schemes.
-* **Native Performance:** Built with Flutter, ensuring a snappy, fluid interface regardless of the project size.
 
 ## Tech Stack
 
