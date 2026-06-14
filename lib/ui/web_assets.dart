@@ -18,7 +18,10 @@ class WebAssets {
         window.isEditorReady = false;
         window.pendingQueue = [];
         window.isSettingsFile = false; 
+        let cursorTimeout = null;
         
+        window.editorModels = {};
+
         require(['vs/editor/editor.main'], function() {
             window.editor = monaco.editor.create(document.getElementById('container'), {
                 value: '// IDE Ready...',
@@ -38,18 +41,35 @@ class WebAssets {
             }
 
             window.editor.onDidChangeCursorPosition((e) => {
-                if (window.flutter_inappwebview) {
-                    window.flutter_inappwebview.callHandler('onCursorChanged', {
-                        line: e.position.lineNumber,
-                        column: e.position.column
-                    });
+                if (cursorTimeout) {
+                    clearTimeout(cursorTimeout);
                 }
+
+                cursorTimeout = setTimeout(() => {
+                    if (window.flutter_inappwebview) {
+                        window.flutter_inappwebview.callHandler('onCursorChanged', {
+                            line: e.position.lineNumber,
+                            column: e.position.column
+                        });
+                    }
+                }, 50);
             });
 
             window.editor.onDidChangeModelDecorations(() => {
                 if (window.flutter_inappwebview) {
                     const markers = monaco.editor.getModelMarkers({});
                     window.flutter_inappwebview.callHandler('onMarkersChanged', markers.length);
+                }
+            });
+
+            window.editor.onKeyDown(function(e) {
+                if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyC) {
+                    setTimeout(function() {
+                        var selectedText = window.editor.getModel().getValueInRange(window.editor.getSelection());
+                        if (selectedText && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+                            window.flutter_inappwebview.callHandler('onTextCopied', selectedText);
+                        }
+                    }, 10);
                 }
             });
 
@@ -80,6 +100,8 @@ class WebAssets {
 
           window.isSettingsFile = (data.fileName === 'settings.json');
 
+          const fileId = data.filePath || data.fileName;
+
           let language = data.lang;
           const languageMap = {
             'js': 'javascript', 'ts': 'typescript', 'yml': 'yaml', 'yaml': 'yaml',
@@ -96,27 +118,36 @@ class WebAssets {
               language = languageMap[language];
           }
 
-          var newModel = monaco.editor.createModel(data.code, language);
-          
-          newModel.onDidChangeContent(function(e) {
-              if (window.flutter_inappwebview) {
-                  window.flutter_inappwebview.callHandler('onContentChanged');
-                  
-                  if (window.isSettingsFile) {
-                    try {
-                        const config = JSON.parse(window.editor.getValue());
-                        window.flutter_inappwebview.callHandler('onSettingsChanged', config);
-                    } catch (err) {}
+          if (!window.editorModels[fileId]) {
+              const modelUri = monaco.Uri.file(fileId);
+              const newModel = monaco.editor.createModel(data.code, language, modelUri);
+              
+              newModel.onDidChangeContent(function(e) {
+                  if (window.flutter_inappwebview) {
+                      window.flutter_inappwebview.callHandler('onContentChanged');
+                      
+                      if (window.isSettingsFile) {
+                        try {
+                            const config = JSON.parse(window.editor.getValue());
+                            window.flutter_inappwebview.callHandler('onSettingsChanged', config);
+                        } catch (err) {}
+                      }
                   }
-              }
-          });
+              });
 
-          var oldModel = window.editor.getModel();
-          window.editor.setModel(newModel);
-          
-          if (oldModel) oldModel.dispose();
+              window.editorModels[fileId] = newModel;
+          }
+
+          window.editor.setModel(window.editorModels[fileId]);
         };
 
+        window.closeEditorModel = function(filePath) {
+            if (window.editorModels[filePath]) {
+                window.editorModels[filePath].dispose();
+                delete window.editorModels[filePath];
+            }
+        };
+        
         window.defineCustomTheme = function(themeName, themeJson) {
             if (typeof monaco !== 'undefined') {
                 monaco.editor.defineTheme(themeName, themeJson);
