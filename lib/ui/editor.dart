@@ -6,6 +6,7 @@ import 'package:codeeditor/ui/git_panel.dart';
 import 'package:codeeditor/ui/search_panel.dart';
 import 'package:codeeditor/ui/vcs_panel.dart';
 import 'package:codeeditor/ui/web_assets.dart';
+import 'package:codeeditor/utils/command.dart';
 import 'package:codeeditor/utils/file_tree.dart';
 import 'package:codeeditor/utils/open_file.dart';
 import 'package:codeeditor/utils/search_match.dart';
@@ -45,6 +46,11 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   Timer? _debounceTimer;
   String _gitBranch = "";
   List<String> _clipboardHistory = [];
+  final TextEditingController _commandController = TextEditingController();
+  final FocusNode _commandFocusNode = FocusNode();
+  bool _isCommandPaletteVisible = false;
+  List<Command> _allCommands = []; 
+  List<Command> _filteredCommands = [];
 
   Map<String, dynamic> _uiColors = {
     "bg": 0xFF1e1e1e,
@@ -53,6 +59,10 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     "tabActive": 0xFF1e1e1e,
     "tabInactive": 0xFF2d2d2d,
     "statusBar": 0xFF007acc,
+    "bgForeground": 0xFFCCCCCC,
+    "sidebarForeground": 0xFFCCCCCC,
+    "tabForeground": 0xFFCCCCCC,
+    "statusBarForeground": 0xFFFFFFFF,
   };
 
   @override
@@ -173,23 +183,25 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   }
 
   Future<void> _loadUiColors(String themeName) async {
-    if (['vs-dark', 'vs', 'hc-black'].contains(themeName)) {
-      setState(() => _uiColors = {
-            "bg": 0xFF1e1e1e,
-            "sidebar": 0xFF252526,
-            "tabBar": 0xFF252526,
-            "tabActive": 0xFF1e1e1e,
-            "tabInactive": 0xFF2d2d2d,
-            "statusBar": 0xFF007acc,
-          });
-      return;
-    }
-    final file = File('${Directory.current.path}/themes/$themeName.json');
+    final String filePath = '${Directory.current.path}/themes/$themeName.json';
+    final File file = File(filePath);
+
     if (await file.exists()) {
-      final json = jsonDecode(await file.readAsString());
-      if (json.containsKey("ui")) {
-        setState(() => _uiColors = Map<String, dynamic>.from(json["ui"]));
-      }
+      final String content = await file.readAsString();
+      final Map<String, dynamic> json = jsonDecode(content);
+      final Map<String, dynamic> uiData = json['ui'] ?? {};
+
+      setState(() {
+        uiData.forEach((key, value) {
+          if (value is String) {
+            String hex = value.replaceAll("#", "");
+            if (hex.length == 6) hex = "FF$hex"; 
+            _uiColors[key] = int.parse("0x$hex");
+          } else {
+            _uiColors[key] = value;
+          }
+        });
+      });
     }
   }
 
@@ -479,20 +491,31 @@ class _EditorScaffoldState extends State<EditorScaffold> {
       "base": "vs-dark",
       "inherit": true,
       "rules": [],
-      "colors": {"editor.background": "#1e1e1e"},
+      "colors": {
+        "editor.background": "#1e1e1e",
+        "editor.foreground": "#d4d4d4"
+      },
       "ui": {
-        "bg": 4280151070,
-        "activityBar": 4280625958,
-        "sidebar": 4280625958,
-        "tabBar": 4280625958,
-        "tabActive": 4280151070,
-        "tabInactive": 4281216557,
-        "statusBar": 4278248652
+        "bg": "#1e1e1e",
+        "bgForeground": "#ffffff",
+        "activityBar": "#252526",
+        "activityBarForeground": "#ffffff",
+        "sidebar": "#252526",
+        "sidebarForeground": "#ffffff",
+        "tabBar": "#252526",
+        "tabBarForeground": "#ffffff",
+        "tabActive": "#1e1e1e",
+        "tabActiveForeground": "#ffffff",
+        "tabInactive": "#2d2d2d",
+        "tabInactiveForeground": "#aaaaaa",
+        "statusBar": "#007acc",
+        "statusBarForeground": "#ffffff"
       }
     };
 
     final File themeFile = File('$folderPath/$themeName.json');
-    await themeFile.writeAsString(jsonEncode(themeTemplate));
+    await themeFile.writeAsString(const JsonEncoder.withIndent('  ').convert(themeTemplate));
+    
     if (!_themes.contains(themeName)) {
       setState(() => _themes.add(themeName));
     }
@@ -519,7 +542,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   }''');
     }
 
-    _openFile(settingsFile); 
+    _openFile(settingsFile);
   }
 
   Future<void> _updateEditorConfig() async {
@@ -671,7 +694,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     return Container(
       height: 25,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: Color(_uiColors["statusBar"] ?? 0xFF007acc), 
+      color: Color(_uiColors["statusBar"] ?? 0x007acc), 
       child: Row(
         children: [
           if (_gitBranch.isNotEmpty) ...[
@@ -717,6 +740,120 @@ class _EditorScaffoldState extends State<EditorScaffold> {
         ],
       ),
     );
+  }
+
+  Widget _buildCommandPalette() {
+    if (!_isCommandPaletteVisible) return const SizedBox.shrink();
+
+    return Positioned(
+      top: 60,
+      left: MediaQuery.of(context).size.width * 0.25,
+      width: MediaQuery.of(context).size.width * 0.5,
+      child: Material(
+        elevation: 10,
+        color: Color(_uiColors["sidebar"] ?? 0x333333),
+        borderRadius: BorderRadius.circular(6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _commandController,
+              focusNode: _commandFocusNode,
+            ),
+            const Divider(height: 1, color: Colors.white24),
+            ListView.builder(
+              shrinkWrap: true,
+              itemCount: _filteredCommands.length,
+              itemBuilder: (context, index) => ListTile(
+                title: Text(_filteredCommands[index].label, style: const TextStyle(color: Colors.white)),
+                onTap: () {
+                  _filteredCommands[index].action();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _loadMainCommands() {
+    setState(() {
+      _allCommands = [
+        Command(label: "Theme: Change Theme", action: _openThemeSelector),
+        Command(label: "Settings: Open settings.json", action: _openSettings),
+        Command(label: "File: Open File", action: _pickFile),
+      ];
+      _filteredCommands = _allCommands;
+    });
+  }
+
+  Future<void> _pickFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json', 'js', 'dart', 'html', 'css', 'txt', 'md', 'txt', 'rs', 'go', 'jsx', 'py', 'ps1', 'sh', 'bat'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        File file = File(result.files.single.path!);
+        await _openFile(file);
+        if (_isCommandPaletteVisible) {
+          _toggleCommandPalette();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error al seleccionar archivo: $e");
+    }
+  }
+
+  void _toggleCommandPalette() {
+    print("Toggle Command Palette: $_isCommandPaletteVisible -> ${!_isCommandPaletteVisible}");
+    setState(() {
+      _isCommandPaletteVisible = !_isCommandPaletteVisible;
+      if (_isCommandPaletteVisible) {
+        _loadMainCommands();
+        _commandController.clear();
+        _commandFocusNode.requestFocus();
+      }
+    });
+  }
+
+  void _openThemeSelector() {
+    setState(() {
+      _allCommands = _themes.map((themeName) {
+        return Command(
+          label: "Theme: $themeName",
+          action: () {
+            _applyTheme(themeName); 
+            _toggleCommandPalette();
+          },
+        );
+      }).toList();
+
+      _allCommands.add(Command(
+        label: "Back to main menu",
+        action: () {
+          _loadMainCommands();
+          _commandController.clear();
+        },
+      ));
+
+      _filteredCommands = _allCommands;
+      _commandController.clear();
+    });
+  }
+
+  void _applyTheme(String themeName) {
+    setState(() {
+      _currentTheme = themeName;
+    });
+    
+    _saveSettings(); 
+
+    _webViewController?.evaluateJavascript(source: '''
+      monaco.editor.setTheme('$themeName');
+    ''');
   }
 
   Future<void> _performSearch(String query) async {
@@ -767,405 +904,409 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     });
   }
 
+  Color getThemeColor(String key) {
+  return Color(_uiColors[key] ?? 0x000000);
+  }
+
+  Color getForeground(String key) {
+    final fgKey = "${key}Foreground";
+    if (_uiColors.containsKey(fgKey)) {
+      return Color(_uiColors[fgKey]);
+    }
+    return Colors.white;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Color sidebarForeground = getForeground("sidebar");
+    final Color mutedSidebar = sidebarForeground.withOpacity(0.5);
     return Focus(
       autofocus: true,
       onKeyEvent: (node, event) {
-        if (event is KeyDownEvent && (HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed) && event.logicalKey == LogicalKeyboardKey.keyS) {
-          _saveFile();
-          return KeyEventResult.handled;
+        if (event is KeyDownEvent) {
+          final isControl = HardwareKeyboard.instance.isControlPressed || HardwareKeyboard.instance.isMetaPressed;
+          final isShift = HardwareKeyboard.instance.isShiftPressed;
+          if (isControl && isShift && event.logicalKey == LogicalKeyboardKey.keyP) {
+            _toggleCommandPalette();
+            return KeyEventResult.handled;
+          }
+          if (isControl && event.logicalKey == LogicalKeyboardKey.keyS) {
+            _saveFile();
+            return KeyEventResult.handled;
+          }
         }
         return KeyEventResult.ignored;
       },
       child: Scaffold(
         backgroundColor: Color(_uiColors["bg"]),
-        body: Row(
+        body: Stack(
           children: [
-            Container(
-              width: 48,
-              color: Color(_uiColors["activityBar"] ?? 0xFF333333), 
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),                   
-                  IconButton(
-                    icon: Icon(
-                      Icons.file_copy, 
-                      color: _isSidebarVisible && _currentSidebarView == SidebarView.explorer ? Colors.white : Colors.white54, 
-                      size: 22
-                    ), 
-                    onPressed: () => setState(() {
-                      if (_isSidebarVisible && _currentSidebarView == SidebarView.explorer) {
-                        _isSidebarVisible = false;
-                      } else {
-                        _isSidebarVisible = true;
-                        _currentSidebarView = SidebarView.explorer;
-                      }
-                    })
-                  ),
-                  const SizedBox(height: 10),                   
-                  IconButton(
-                    icon: Icon(
-                      Icons.search, 
-                      color: _isSidebarVisible && _currentSidebarView == SidebarView.search ? Colors.white : Colors.white54, 
-                      size: 22
-                    ),
-                    onPressed: () => setState(() {
-                      if (_isSidebarVisible && _currentSidebarView == SidebarView.search) {
-                        _isSidebarVisible = false;
-                      } else {
-                        _isSidebarVisible = true;
-                        _currentSidebarView = SidebarView.search;
-                      }
-                    }),
-                  ),
-                  const SizedBox(height: 10), 
-                  IconButton (
-                    icon: Icon(
-                      Icons.track_changes, 
-                      color: _isSidebarVisible && _currentSidebarView == SidebarView.vcs ? Colors.white : Colors.white54, 
-                      size: 22
-                    ),
-                    tooltip: "Local VCS Dashboard",
-                    onPressed: () => setState(() {
-                      if (_isSidebarVisible && _currentSidebarView == SidebarView.vcs) {
-                        _isSidebarVisible = false;
-                      } else {
-                        _isSidebarVisible = true;
-                        _currentSidebarView = SidebarView.vcs;
-                      }
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  IconButton(
-                    icon: Icon(
-                      Icons.hub_rounded,
-                      color: _isSidebarVisible && _currentSidebarView == SidebarView.git ? Colors.white : Colors.white54, 
-                      size: 22
-                    ),
-                    tooltip: "Git Repository Remote",
-                    onPressed: () => setState(() {
-                      if (_isSidebarVisible && _currentSidebarView == SidebarView.git) {
-                        _isSidebarVisible = false;
-                      } else {
-                        _isSidebarVisible = true;
-                        _currentSidebarView = SidebarView.git;
-                      }
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  IconButton(
-                    icon: Icon(
-                      Icons.assignment_outlined,
-                      color: _isSidebarVisible && _currentSidebarView == SidebarView.clipboard ? Colors.white : Colors.white54, 
-                      size: 22
-                    ),
-                    tooltip: "Clipboard History",
-                    onPressed: () => setState(() {
-                      if (_isSidebarVisible && _currentSidebarView == SidebarView.clipboard) {
-                        _isSidebarVisible = false;
-                      } else {
-                        _isSidebarVisible = true;
-                        _currentSidebarView = SidebarView.clipboard;
-                      }
-                    }),
-                  ),
-                  const Spacer(), 
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.settings, color: Colors.white, size: 22),
-                    color: Color(_uiColors["sidebar"]),
-                    onSelected: (value) {
-                      if (value == 'settings') _openSettings();
-                      if (value == 'new_theme') _showCreateThemeDialog(context);
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'settings', child: Text("Open Settings", style: TextStyle(color: Colors.white))),
-                      const PopupMenuItem(value: 'new_theme', child: Text("Create New Theme", style: TextStyle(color: Colors.white))),
-                    ],
-                  )
-                ],
-              ),
-            ),
-            if (_isSidebarVisible) ...[
-              Container(
-                width: _sidebarWidth,
-                color: Color(_uiColors["sidebar"]),
-                child: _currentSidebarView == SidebarView.explorer
-                    ? Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text("EXPLORER", style: TextStyle(color: Colors.white70, fontSize: 11, letterSpacing: 1)),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.folder_open, size: 16, color: Colors.white70),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      tooltip: "Open Project",
-                                      onPressed: _pickDirectory,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    if (_currentRootPath != null) ...[
-                                      IconButton(
-                                        icon: const Icon(Icons.note_add, size: 16, color: Colors.white70),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => _showCreateRootItemDialog(context, isFolder: false),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      IconButton(
-                                        icon: const Icon(Icons.create_new_folder, size: 16, color: Colors.white70),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        onPressed: () => _showCreateRootItemDialog(context, isFolder: true),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.more_horiz, size: 16, color: Colors.white70),
-                                    ],
-                                  ],
-                                ),
-                              ],
-                            ),
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  color: Color(_uiColors["activityBar"] ?? 0xFF333333),
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.file_copy,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.explorer
+                            ? getForeground("sidebar") 
+                            : getForeground("sidebar"),
+                          size: 22
+                        ),
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.explorer) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.explorer;
+                          }
+                        })
+                      ),
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.search,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.search
+                            ? getForeground("sidebar") 
+                            : getForeground("sidebar"),
+                          size: 22
+                        ),
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.search) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.search;
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.track_changes,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.vcs
+                            ? getForeground("sidebar") 
+                            : getForeground("sidebar"),
+                          size: 22
+                        ),
+                        tooltip: "Local VCS Dashboard",
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.vcs) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.vcs;
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.hub_rounded,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.git
+                            ? getForeground("sidebar") 
+                            : getForeground("sidebar"),
+                          size: 22
+                        ),
+                        tooltip: "Git Repository Remote",
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.git) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.git;
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.assignment_outlined,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.clipboard
+                            ? getForeground("sidebar") 
+                            : getForeground("sidebar"),
+                          size: 22
+                        ),
+                        tooltip: "Clipboard History",
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.clipboard) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.clipboard;
+                          }
+                        }),
+                      ),
+                      const Spacer(),
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.settings, color: getForeground("activityBar"), size: 22),
+                        color: getThemeColor("sidebar"),
+                        onSelected: (value) {
+                          if (value == 'settings') _openSettings();
+                          if (value == 'new_theme') _showCreateThemeDialog(context);
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'settings', 
+                            child: Text("Open Settings", style: TextStyle(color: getForeground("sidebar")))
                           ),
-                          Expanded(
-                            child: _currentRootPath == null
-                                ? Column(
-                                    children: [
-                                      ListTile(
-                                        leading: Icon(Icons.folder_open, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
-                                        title: Text("Open Folder", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
-                                        onTap: _pickDirectory,
-                                        dense: true,
-                                      ),
-                                      ListTile(
-                                        leading: Icon(Icons.insert_drive_file, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
-                                        title: Text("Open File", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
-                                        onTap: () async {
-                                          final result = await FilePicker.pickFiles();
-                                          if (result != null && result.files.single.path != null) {
-                                            _openFile(File(result.files.single.path!));
-                                          }
-                                        },
-                                        dense: true,
-                                      )
-                                    ],
-                                  )
-                                : ListView(
-                                    children: _rootEntities.map((e) => FileTreeItem(
-                                      entity: e,
-                                      onFileTap: _openFile,
-                                      onAction: _refreshFolder,
-                                      uiColors: _uiColors,
-                                    )).toList(),
-                                  ),
+                          PopupMenuItem(
+                            value: 'new_theme', 
+                            child: Text("Create New Theme", style: TextStyle(color: getForeground("sidebar")))
                           ),
                         ],
                       )
-                    : _currentSidebarView == SidebarView.search
-                        ? SearchPanel(
-                            uiColors: _uiColors,
-                            results: _searchResults,
-                            onSearch: _performSearch,
-                            isSearching: _isSearching,
-                            onFileTap: (file, lineNumber) async {
-                              await _openFile(file);
-                              _webViewController?.evaluateJavascript(
-                                source: "window.editor.revealLine($lineNumber); window.editor.setPosition({lineNumber: $lineNumber, column: 1});"
-                              );
-                            },
+                    ],
+                  ),
+                ),
+                if (_isSidebarVisible) ...[
+                  Container(
+                    width: _sidebarWidth,
+                    color: Color(_uiColors["sidebar"]),
+                    child: _currentSidebarView == SidebarView.explorer
+                        ? Column(
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text("EXPLORER", style: TextStyle(color: Colors.white70, fontSize: 11, letterSpacing: 1)),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.folder_open, size: 16, color: Colors.white70),
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          tooltip: "Open Project",
+                                          onPressed: _pickDirectory,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        if (_currentRootPath != null) ...[
+                                          IconButton(
+                                            icon: const Icon(Icons.note_add, size: 16, color: Colors.white70),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () => _showCreateRootItemDialog(context, isFolder: false),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            icon: const Icon(Icons.create_new_folder, size: 16, color: Colors.white70),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () => _showCreateRootItemDialog(context, isFolder: true),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          const Icon(Icons.more_horiz, size: 16, color: Colors.white70),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                child: _currentRootPath == null
+                                    ? Column(
+                                        children: [
+                                          ListTile(
+                                            leading: Icon(Icons.folder_open, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
+                                            title: Text("Open Folder", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
+                                            onTap: _pickDirectory,
+                                            dense: true,
+                                          ),
+                                          ListTile(
+                                            leading: Icon(Icons.insert_drive_file, size: 18, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF)),
+                                            title: Text("Open File", style: TextStyle(fontSize: 12, color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF))),
+                                            onTap: () async {
+                                              final result = await FilePicker.pickFiles();
+                                              if (result != null && result.files.single.path != null) {
+                                                _openFile(File(result.files.single.path!));
+                                              }
+                                            },
+                                            dense: true,
+                                          )
+                                        ],
+                                      )
+                                    : ListView(
+                                        children: _rootEntities.map((e) => FileTreeItem(
+                                              entity: e,
+                                              onFileTap: _openFile,
+                                              onAction: _refreshFolder,
+                                              uiColors: _uiColors,
+                                            )).toList(),
+                                      ),
+                              ),
+                            ],
                           )
-                        : _currentSidebarView == SidebarView.vcs
-                            ? VcsPanel(
-                                rootPath: _currentRootPath,
-                                onFileTap: _openFile,
+                        : _currentSidebarView == SidebarView.search
+                            ? SearchPanel(
                                 uiColors: _uiColors,
+                                results: _searchResults,
+                                onSearch: _performSearch,
+                                isSearching: _isSearching,
+                                onFileTap: (file, lineNumber) async {
+                                  await _openFile(file);
+                                  _webViewController?.evaluateJavascript(
+                                    source: "window.editor.revealLine($lineNumber); window.editor.setPosition({lineNumber: $lineNumber, column: 1});"
+                                  );
+                                },
                               )
-                            : _currentSidebarView == SidebarView.git
-                                ? GitPanel(
+                            : _currentSidebarView == SidebarView.vcs
+                                ? VcsPanel(
                                     rootPath: _currentRootPath,
+                                    onFileTap: _openFile,
                                     uiColors: _uiColors,
                                   )
-                                : Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                                        child: Text(
-                                          "CLIPBOARD HISTORY", 
-                                          style: TextStyle(
-                                            color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF).withOpacity(0.7), 
-                                            fontSize: 11, 
-                                            letterSpacing: 1, 
-                                            fontWeight: FontWeight.bold
-                                          )
-                                        ),
+                                : _currentSidebarView == SidebarView.git
+                                    ? GitPanel(
+                                        rootPath: _currentRootPath,
+                                        uiColors: _uiColors,
+                                      )
+                                    : Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Padding(
+                                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                            child: Text("CLIPBOARD HISTORY", style: TextStyle(color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF).withOpacity(0.7), fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.bold)),
+                                          ),
+                                          const Divider(color: Colors.black26, height: 1),
+                                          Expanded(
+                                            child: _clipboardHistory.isEmpty
+                                                ? Center(
+                                                    child: Text(
+                                                      "History is empty",
+                                                      style: TextStyle(color: mutedSidebar, fontSize: 12, fontStyle: FontStyle.italic),
+                                                    ),
+                                                  )
+                                                : ListView.builder(
+                                                    itemCount: _clipboardHistory.length,
+                                                    itemBuilder: (context, index) {
+                                                      final text = _clipboardHistory[index];
+                                                      return ListTile(
+                                                        title: Text(
+                                                          text.replaceAll('\n', ' ').trim(),
+                                                          maxLines: 2,
+                                                          overflow: TextOverflow.ellipsis,
+                                                          style: TextStyle(color: sidebarForeground, fontSize: 12, fontFamily: 'monospace'),
+                                                        ),
+                                                        subtitle: Text(
+                                                          "${text.length} chars",
+                                                          style: TextStyle(color: mutedSidebar, fontSize: 10),
+                                                        ),
+                                                        trailing: IconButton(
+                                                          icon: Icon(Icons.delete_outline, size: 14, color: mutedSidebar),
+                                                          padding: EdgeInsets.zero,
+                                                          constraints: const BoxConstraints(),
+                                                          onPressed: () => setState(() => _clipboardHistory.removeAt(index)),
+                                                        ),
+                                                        dense: true,
+                                                        onTap: () => _pasteFromHistory(text),
+                                                      );
+                                                    },
+                                                  ),
+                                          ),
+                                        ],
                                       ),
-                                      const Divider(color: Colors.black26, height: 1),
-                                      Expanded(
-                                        child: _clipboardHistory.isEmpty
-                                            ? const Center(
-                                                child: Text(
-                                                  "History is empty", 
-                                                  style: TextStyle(color: Colors.white38, fontSize: 12, fontStyle: FontStyle.italic)
-                                                ),
-                                              )
-                                            : ListView.builder(
-                                                itemCount: _clipboardHistory.length,
-                                                itemBuilder: (context, index) {
-                                                  final text = _clipboardHistory[index];
-                                                  final previewText = text.replaceAll('\n', ' ').trim();
-
-                                                  return ListTile(
-                                                    title: Text(
-                                                      previewText,
-                                                      maxLines: 2,
-                                                      overflow: TextOverflow.ellipsis,
-                                                      style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'),
-                                                    ),
-                                                    subtitle: Text(
-                                                      "${text.length} chars",
-                                                      style: const TextStyle(color: Colors.white30, fontSize: 10),
-                                                    ),
-                                                    trailing: IconButton(
-                                                      icon: const Icon(Icons.delete_outline, size: 14, color: Colors.white38),
-                                                      padding: EdgeInsets.zero,
-                                                      constraints: const BoxConstraints(),
-                                                      onPressed: () => setState(() => _clipboardHistory.removeAt(index)),
-                                                    ),
-                                                    dense: true,
-                                                    onTap: () => _pasteFromHistory(text),
-                                                  );
-                                                },
-                                              ),
-                                      ),
-                                    ],
-                                  ),
-              ),              
-              MouseRegion(
-                cursor: SystemMouseCursors.resizeColumn,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragUpdate: (details) => setState(() => _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(150.0, 500.0)),
-                  child: Container(width: 1, color: Colors.black),
-                ),
-              ),
-            ],
-            Expanded(
-              child: Column(
-                children: [
-                  Container(
-                    height: 35,
-                    color: Color(_uiColors["tabBar"]),
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _openFiles.length,
-                      itemBuilder: (context, index) {
-                        bool isActive = _activeTabIndex == index;
-                        return InkWell(
-                          onTap: () {
-                            setState(() => _activeTabIndex = index);
+                  ),
+                  MouseRegion(
+                    cursor: SystemMouseCursors.resizeColumn,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) => setState(() => _sidebarWidth = (_sidebarWidth + details.delta.dx).clamp(150.0, 500.0)),
+                      child: Container(width: 1, color: Colors.black),
+                    ),
+                  ),
+                ],
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        height: 35,
+                        color: Color(_uiColors["tabBar"] ?? 0x2D2D2D),
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _openFiles.length,
+                          itemBuilder: (context, index) {
+                            bool isActive = _activeTabIndex == index;
+                            Color bgColor = Color(isActive ? (_uiColors["tabActive"] ?? 0x1E1E1E) : (_uiColors["tabInactive"] ?? 0x2D2D2D));
+                            Color textColor = Color(_uiColors["tabForeground"] ?? 0xCCCCCC); 
+                            
+                            return InkWell(
+                              onTap: () {
+                                setState(() => _activeTabIndex = index);
+                                _syncEditorWithTab();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.only(left: 16, right: 8),
+                                decoration: BoxDecoration(
+                                  color: bgColor, 
+                                  border: const Border(right: BorderSide(color: Colors.black26, width: 1))
+                                ),
+                                alignment: Alignment.center,
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      p.basename(_openFiles[index].file.path), 
+                                      style: TextStyle(color: textColor, fontSize: 12)
+                                    ),
+                                    const SizedBox(width: 8),
+                                    if (_openFiles[index].isDirty) 
+                                      const Icon(Icons.circle, color: Colors.yellow, size: 8),
+                                    IconButton(
+                                      icon: Icon(Icons.close, size: 14, color: textColor), 
+                                      padding: EdgeInsets.zero, 
+                                      constraints: const BoxConstraints(), 
+                                      onPressed: () => _closeFile(index)
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      BreadcrumbsBar(
+                        activeFilePath: _activeTabIndex != -1 ? _openFiles[_activeTabIndex].file.path : null,
+                        rootPath: _currentRootPath,
+                        uiColors: _uiColors,
+                      ),
+                      Expanded(
+                        child: InAppWebView(
+                          initialData: InAppWebViewInitialData(data: WebAssets.htmlContent),
+                          onWebViewCreated: (controller) {
+                            _webViewController = controller;
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onSettingsChanged', callback: (args) {
+                              final Map<String, dynamic> newConfig = args[0];
+                              setState(() {
+                                _currentTheme = newConfig['theme'] ?? _currentTheme;
+                                _fontSize = (newConfig['fontSize'] as num?)?.toDouble() ?? _fontSize;
+                                _fontFamily = newConfig['fontFamily'] ?? _fontFamily;
+                              });
+                              _webViewController?.evaluateJavascript(source: 'monaco.editor.setTheme("${_currentTheme}"); monaco.editor.updateOptions({fontSize: ${_fontSize}, fontFamily: "${_fontFamily}"});');
+                              _saveSettings();
+                            });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onEditorReady', callback: (args) { _isEditorInitialized = true; _applySavedConfig(); });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onContentChanged', callback: (args) { if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) setState(() => _openFiles[_activeTabIndex].isDirty = true); });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onSaveCommand', callback: (args) => _saveFile());
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onCursorChanged', callback: (args) { final int line = args[0]['line'] ?? 1; final int column = args[0]['column'] ?? 1; _cursorPositionNotifier.value = (line, column); });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onMarkersChanged', callback: (args) { setState(() => _errorCount = args[0]); });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onTextCopied', callback: (args) { if (args.isNotEmpty && args[0] is String) _addToClipboardHistory(args[0]); });
+                            _registerAllThemesToWebView();
                             _syncEditorWithTab();
                           },
-                          child: Container(
-                            padding: const EdgeInsets.only(left: 16, right: 8),
-                            decoration: BoxDecoration(color: Color(isActive ? _uiColors["tabActive"] : _uiColors["tabInactive"]), border: const Border(right: BorderSide(color: Colors.black, width: 1))),
-                            alignment: Alignment.center,
-                            child: Row(
-                              children: [
-                                Text(p.basename(_openFiles[index].file.path), style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                                const SizedBox(width: 8),
-                                if (_openFiles[index].isDirty) const Icon(Icons.circle, color: Colors.yellow, size: 8),
-                                IconButton(icon: const Icon(Icons.close, size: 14, color: Colors.white70), padding: EdgeInsets.zero, constraints: const BoxConstraints(), onPressed: () => _closeFile(index)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                        ),
+                      ),
+                      _buildStatusBar(),
+                    ],
                   ),
-                  BreadcrumbsBar(
-                    activeFilePath: _activeTabIndex != -1 ? _openFiles[_activeTabIndex].file.path : null,
-                    rootPath: _currentRootPath,
-                    uiColors: _uiColors,
-                  ),
-                  Expanded(
-                    child: InAppWebView(
-                      initialData: InAppWebViewInitialData(data: WebAssets.htmlContent),
-                      onWebViewCreated: (controller) {
-                        _webViewController = controller;
-
-                        _webViewController?.addJavaScriptHandler(
-                          handlerName: 'onSettingsChanged',
-                          callback: (args) {
-                            final Map<String, dynamic> newConfig = args[0];
-                            
-                            setState(() {
-                              _currentTheme = newConfig['theme'] ?? _currentTheme;
-                              _fontSize = (newConfig['fontSize'] as num?)?.toDouble() ?? _fontSize;
-                              _fontFamily = newConfig['fontFamily'] ?? _fontFamily;
-                            });
-
-                            _webViewController?.evaluateJavascript(source: '''
-                              monaco.editor.setTheme('${_currentTheme}');
-                              monaco.editor.updateOptions({
-                                fontSize: ${_fontSize},
-                                fontFamily: '${_fontFamily}'
-                              });
-                            ''');
-
-                            _saveSettings();
-                          }
-                        );
-
-                        _webViewController?.addJavaScriptHandler(
-                          handlerName: 'onEditorReady', 
-                          callback: (args) {
-                            _isEditorInitialized = true;            
-                            _applySavedConfig();
-                          }
-                        );
-                        
-                        _webViewController?.addJavaScriptHandler(handlerName: 'onContentChanged', callback: (args) {
-                          if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) {
-                            setState(() => _openFiles[_activeTabIndex].isDirty = true);
-                          }
-                        });       
-                        
-                        _webViewController?.addJavaScriptHandler(handlerName: 'onSaveCommand', callback: (args) => _saveFile());       
-                        
-                        _webViewController?.addJavaScriptHandler(handlerName: 'onCursorChanged', callback: (args) {
-                          final int line = args[0]['line'] ?? 1;
-                          final int column = args[0]['column'] ?? 1;
-
-                          _cursorPositionNotifier.value = (line, column);
-                        });
-
-                        _webViewController?.addJavaScriptHandler(handlerName: 'onMarkersChanged', callback: (args) {
-                          setState(() => _errorCount = args[0]);
-                        });
-
-                        _webViewController?.addJavaScriptHandler(
-                          handlerName: 'onTextCopied', 
-                          callback: (args) {
-                            if (args.isNotEmpty && args[0] is String) {
-                              _addToClipboardHistory(args[0]);
-                            }
-                          }
-                        );
-
-                        _registerAllThemesToWebView();
-                        _syncEditorWithTab();
-                      }
-                    ),
-                  ),
-                  _buildStatusBar(),
-                ],
-              ),
+                ),
+              ],
             ),
+            _buildCommandPalette(),
           ],
         ),
       ),
