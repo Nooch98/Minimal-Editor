@@ -16,18 +16,31 @@ class BreadcrumbsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color barBackground = Color(uiColors["tabBar"] ?? 0xFF252526).withOpacity(0.95);
-    final Color textColor = Color(uiColors["sidebarForeground"] ?? 0xFFFFFFFF);
-    final Color mutedColor = textColor.withOpacity(0.4);
-    final Color activeColor = textColor.withOpacity(0.85);
+    Color get(List<String> keys, Color fallback) {
+      for (final key in keys) {
+        final value = uiColors[key];
+        if (value is Color) return value;
+        if (value is int) return Color(value);
+        if (value is String) {
+          try {
+            return Color(int.parse(value.replaceFirst('#', '0xFF')));
+          } catch (_) {}
+        }
+      }
+      return fallback;
+    }
+
+    final Color barBackground = get(["tabBar", "bg"], const Color(0x252526));
+
+    final Color defaultFg = (barBackground.computeLuminance() > 0.5) 
+        ? Colors.black87 : Colors.white70;
+
+    final Color textColor = get(["tabBarForeground", "sidebarForeground"], defaultFg);
+    final Color activeTextColor = get(["tabActiveForeground", "tabBarForeground"], textColor);
+    final Color mutedColor = textColor.withOpacity(0.5);
 
     if (activeFilePath == null) {
-      return Container(
-        height: 22,
-        decoration: BoxDecoration(
-          color: barBackground,
-        ),
-      );
+      return Container(height: 22, color: barBackground);
     }
 
     List<String> segments = [];
@@ -36,9 +49,7 @@ class BreadcrumbsBar extends StatelessWidget {
       segments = p.split(relative);
     } else {
       segments = p.split(activeFilePath!);
-      if (segments.length > 3) {
-        segments = segments.sublist(segments.length - 3);
-      }
+      if (segments.length > 3) segments = segments.sublist(segments.length - 3);
     }
 
     return Container(
@@ -47,9 +58,9 @@ class BreadcrumbsBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       alignment: Alignment.centerLeft,
       decoration: BoxDecoration(
-        color: barBackground, 
+        color: barBackground,
         border: Border(
-          bottom: BorderSide(color: Colors.black.withOpacity(0.2), width: 1),
+          bottom: BorderSide(color: textColor.withOpacity(0.1), width: 1),
         ),
       ),
       child: ListView.separated(
@@ -72,13 +83,13 @@ class BreadcrumbsBar extends StatelessWidget {
               Icon(
                 isFile ? Icons.insert_drive_file_outlined : Icons.folder_open_outlined,
                 size: 11,
-                color: isLast ? activeColor : mutedColor,
+                color: isLast ? activeTextColor : mutedColor,
               ),
               const SizedBox(width: 4),
               Text(
                 segmentName,
                 style: TextStyle(
-                  color: isLast ? activeColor : mutedColor,
+                  color: isLast ? activeTextColor : mutedColor,
                   fontSize: 10.5,
                   fontFamily: 'monospace',
                   fontWeight: isLast ? FontWeight.w600 : FontWeight.normal,
