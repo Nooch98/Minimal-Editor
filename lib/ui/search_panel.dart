@@ -21,18 +21,37 @@ class SearchPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Color resolve(String key, Color fallback) {
+      final value = uiColors[key];
+      if (value is Color) return value;
+      if (value is int) return Color(value);
+      if (value is String) {
+        try {
+          return Color(int.parse(value.replaceFirst('#', '0xFF')));
+        } catch (_) {
+          return fallback;
+        }
+      }
+      return fallback;
+    }
+
+    final Color bg = resolve("bg", const Color(0x1E1E1E));
+    final Color defaultFg = (bg.computeLuminance() > 0.5) ? Colors.black87 : Colors.white70;
+    final Color fg = resolve("bgForeground", resolve("sidebarForeground", defaultFg));
+    final Color accent = resolve("statusBar", resolve("editorCursor.foreground", Colors.blue));
+
     return Column(
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 12, 16, 8),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
               "SEARCH",
               style: TextStyle(
-                color: Colors.white70,
+                color: fg.withOpacity(0.6),
                 fontSize: 11,
-                letterSpacing: 1,
+                letterSpacing: 0.5,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -42,28 +61,31 @@ class SearchPanel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: TextField(
             onChanged: onSearch,
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+            style: TextStyle(color: fg, fontSize: 13),
+            cursorColor: accent,
             decoration: InputDecoration(
               hintText: "Search in files...",
-              hintStyle: const TextStyle(color: Colors.white30),
+              hintStyle: TextStyle(color: fg.withOpacity(0.4)),
               filled: true,
-              fillColor: Color(uiColors["bg"] ?? 0xFF1E1E1E),
+              fillColor: bg.withOpacity(0.5),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide(color: fg.withOpacity(0.2)),
               ),
-              focusedBorder: const OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.blueAccent),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(4),
+                borderSide: BorderSide(color: accent, width: 1.5),
               ),
             ),
           ),
         ),
         const SizedBox(height: 8),
         if (isSearching)
-          const LinearProgressIndicator(
+          LinearProgressIndicator(
             minHeight: 2,
-            backgroundColor: Colors.transparent,
-            valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
+            backgroundColor: bg,
+            valueColor: AlwaysStoppedAnimation<Color>(accent),
           )
         else
           const SizedBox(height: 2),
@@ -85,11 +107,15 @@ class SearchPanel extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.description, size: 12, color: Colors.white30),
+                          Icon(Icons.description, size: 12, color: fg.withOpacity(0.7)),
                           const SizedBox(width: 6),
                           Text(
                             fileName, 
-                            style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)
+                            style: TextStyle(
+                              color: fg, 
+                              fontSize: 12, 
+                              fontWeight: FontWeight.bold
+                            )
                           ),
                         ],
                       ),
@@ -98,7 +124,7 @@ class SearchPanel extends StatelessWidget {
                         padding: const EdgeInsets.only(left: 18),
                         child: Text(
                           "L${match.lineNumber}: ${match.lineContent.trim()}",
-                          style: const TextStyle(color: Colors.white54, fontSize: 11),
+                          style: TextStyle(color: fg.withOpacity(0.7), fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
