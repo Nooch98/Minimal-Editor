@@ -388,8 +388,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
   }
 
   void _showSnackBar(String message) {
-    final sidebarHex = widget.uiColors["sidebar"] ?? 0xFF111217;
-    final tabActiveHex = widget.uiColors["tabActive"] ?? 0xFF1A1B26;
+    final sidebarHex = widget.uiColors["sidebar"] ?? 0x111217;
+    final tabActiveHex = widget.uiColors["tabActive"] ?? 0x1A1B26;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -402,10 +402,11 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    final Color sidebarBg = Color(widget.uiColors["sidebar"] ?? 0xFF111217);
-    final Color elementBg = Color(widget.uiColors["bg"] ?? 0xFF1A1B26);
-    final Color tabActiveBg = Color(widget.uiColors["tabActive"] ?? 0xFF1A1B26);
-    final Color statusColor = Color(widget.uiColors["statusBar"] ?? 0xFF24283B);
+    final Color sidebarFg = Color(widget.uiColors["bgForeground"] ?? 0x111217);
+    final Color sidebarBg = Color(widget.uiColors["sidebar"] ?? 0x111217);
+    final Color elementBg = Color(widget.uiColors["bg"] ?? 0x1A1B26);
+    final Color tabActiveBg = Color(widget.uiColors["tabActive"] ?? 0x1A1B26);
+    final Color statusColor = Color(widget.uiColors["statusBar"] ?? 0x24283B);
     
     final Color primaryText = Colors.white;
     final Color secondaryText = primaryText.withOpacity(0.6);
@@ -447,8 +448,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
               controller: _tabController,
               indicatorColor: statusColor,
               indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: primaryText,
-              unselectedLabelColor: mutedText,
+              labelColor: sidebarFg,
+              unselectedLabelColor: sidebarFg,
               labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
               tabs: const [
                 Tab(text: "CHANGES"),
@@ -464,10 +465,10 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildChangesTab(primaryText, secondaryText, mutedText, elementBg, tabActiveBg, statusColor),
-                _buildHistoryTab(primaryText, secondaryText, mutedText, elementBg, statusColor),
-                _buildStatsTab(primaryText, secondaryText, mutedText, elementBg, statusColor),
-                _buildPullTab(primaryText, secondaryText, mutedText, elementBg, tabActiveBg, statusColor),
+                _buildChangesTab(primaryText, secondaryText, mutedText, elementBg, tabActiveBg, statusColor, sidebarFg),
+                _buildHistoryTab(primaryText, secondaryText, mutedText, elementBg, statusColor, sidebarFg),
+                _buildStatsTab(primaryText, secondaryText, mutedText, elementBg, statusColor, sidebarFg),
+                _buildPullTab(primaryText, secondaryText, mutedText, elementBg, tabActiveBg, statusColor, sidebarFg),
               ],
             ),
           ),
@@ -476,7 +477,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildChangesTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color tabActiveBg, Color statusColor) {
+  Widget _buildChangesTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color tabActiveBg, Color statusColor, Color sidebarFg) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -489,15 +490,15 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           ),
           child: Row(
             children: [
-              Icon(Icons.alt_route, size: 13, color: statusColor),
+              Icon(Icons.alt_route, size: 13, color: sidebarFg),
               const SizedBox(width: 6),
               Text(
                 _currentBranch,
-                style: TextStyle(color: primaryText.withOpacity(0.85), fontSize: 11, fontWeight: FontWeight.w500),
+                style: TextStyle(color: sidebarFg.withOpacity(0.85), fontSize: 11, fontWeight: FontWeight.w500),
               ),
               const Spacer(),
               IconButton(
-                icon: Icon(Icons.download, size: 13, color: secondaryText),
+                icon: Icon(Icons.download, size: 13, color: sidebarFg),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: _isProcessing ? null : () => _executePull(null, "latest"),
@@ -505,7 +506,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
               ),
               const SizedBox(width: 8),
               IconButton(
-                icon: Icon(Icons.refresh, size: 13, color: secondaryText),
+                icon: Icon(Icons.refresh, size: 13, color: sidebarFg),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 onPressed: _isProcessing ? null : _refreshVcsState,
@@ -515,7 +516,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 14),
-        Text("CHANGES", style: TextStyle(color: primaryText, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text("CHANGES", style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
         Expanded(
           child: _modifiedFiles.isEmpty
@@ -523,7 +524,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                   padding: const EdgeInsets.only(top: 12.0),
                   child: Text(
                     "No local modifications detected.",
-                    style: TextStyle(color: mutedText, fontSize: 11, fontStyle: FontStyle.italic),
+                    style: TextStyle(color: sidebarFg, fontSize: 11, fontStyle: FontStyle.italic),
                   ),
                 )
               : ListView.builder(
@@ -534,16 +535,16 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                       contentPadding: EdgeInsets.zero,
                       dense: true,
                       visualDensity: const VisualDensity(vertical: -3),
-                      leading: Icon(Icons.description_outlined, size: 14, color: statusColor),
-                      title: Text(p.basename(file.path), style: TextStyle(color: primaryText, fontSize: 12)),
+                      leading: Icon(Icons.description_outlined, size: 14, color: sidebarFg),
+                      title: Text(p.basename(file.path), style: TextStyle(color: sidebarFg, fontSize: 12)),
                       subtitle: Text(
                         p.relative(file.path, from: widget.rootPath),
-                        style: TextStyle(color: secondaryText, fontSize: 10),
+                        style: TextStyle(color: sidebarFg, fontSize: 10),
                         overflow: TextOverflow.ellipsis,
                       ),
                       trailing: Padding(
                         padding: const EdgeInsets.only(right: 8.0),
-                        child: Text("M", style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 11)),
+                        child: Text("M", style: TextStyle(color: sidebarFg, fontWeight: FontWeight.bold, fontSize: 11)),
                       ),
                       onTap: () => widget.onFileTap(file),
                     );
@@ -551,15 +552,15 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                 ),
         ),
         Divider(color: primaryText.withOpacity(0.08), height: 16),
-        Text("SNAPSHOT PROPERTIES", style: TextStyle(color: mutedText, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text("SNAPSHOT PROPERTIES", style: TextStyle(color: sidebarFg, fontSize: 9, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         TextField(
           controller: _messageController,
-          style: TextStyle(color: primaryText, fontSize: 12),
+          style: TextStyle(color: sidebarFg, fontSize: 12),
           cursorColor: statusColor,
           decoration: InputDecoration(
             hintText: "Snapshot message (Required)...",
-            hintStyle: TextStyle(color: mutedText, fontSize: 11),
+            hintStyle: TextStyle(color: sidebarFg, fontSize: 11),
             filled: true,
             fillColor: tabActiveBg,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -576,11 +577,11 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
         const SizedBox(height: 6),
         TextField(
           controller: _authorController,
-          style: TextStyle(color: primaryText, fontSize: 12),
+          style: TextStyle(color: sidebarFg, fontSize: 12),
           cursorColor: statusColor,
           decoration: InputDecoration(
             hintText: "Author: Name <email> (Optional)...",
-            hintStyle: TextStyle(color: mutedText, fontSize: 11),
+            hintStyle: TextStyle(color: sidebarFg, fontSize: 11),
             filled: true,
             fillColor: tabActiveBg,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -595,16 +596,16 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           ),
         ),
         const SizedBox(height: 10),
-        Text("SECURITY BOUND", style: TextStyle(color: mutedText, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text("SECURITY BOUND", style: TextStyle(color: sidebarFg, fontSize: 9, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         TextField(
           controller: _passwordController,
           obscureText: _obscurePassword,
-          style: TextStyle(color: primaryText, fontSize: 12),
+          style: TextStyle(color: sidebarFg, fontSize: 12),
           cursorColor: statusColor,
           decoration: InputDecoration(
             hintText: "Vault encryption key...",
-            hintStyle: TextStyle(color: mutedText, fontSize: 11),
+            hintStyle: TextStyle(color: sidebarFg, fontSize: 11),
             filled: true,
             fillColor: tabActiveBg,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -727,7 +728,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
     }
   }
 
-  Widget _buildPullTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color tabActiveBg, Color statusColor) {
+  Widget _buildPullTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color tabActiveBg, Color statusColor, Color sidebarFg) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -740,26 +741,26 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           ),
           child: Row(
             children: [
-              Icon(Icons.sync_alt, size: 13, color: statusColor),
+              Icon(Icons.sync_alt, size: 13, color: sidebarFg),
               const SizedBox(width: 6),
               Text(
                 "SYNC WORKSPACE ON: ",
-                style: TextStyle(color: mutedText, fontSize: 10, fontWeight: FontWeight.bold),
+                style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold),
               ),
               Text(
                 _currentBranch,
-                style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                style: TextStyle(color: sidebarFg, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
 
-        Text("LATEST SNAPSHOT SYNC", style: TextStyle(color: primaryText, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text("LATEST SNAPSHOT SYNC", style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
         Text(
           "Synchronize and update your editor with the last state saved in the local repository of this track.",
-          style: TextStyle(color: secondaryText, fontSize: 11),
+          style: TextStyle(color: sidebarFg, fontSize: 11),
         ),
         const SizedBox(height: 8),
         SizedBox(
@@ -768,28 +769,28 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: elementBg,
-              foregroundColor: primaryText,
+              foregroundColor: sidebarFg,
               elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
                 side: BorderSide(color: primaryText.withOpacity(0.1)),
               ),
             ),
-            icon: Icon(Icons.download_rounded, size: 14, color: statusColor), 
+            icon: Icon(Icons.download_rounded, size: 14, color: sidebarFg), 
             label: const Text("Pull Latest Snapshot", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
             onPressed: _isProcessing ? null : () => _executePull(null, "latest"),
           ),
         ),
 
         const SizedBox(height: 16),
-        Divider(color: primaryText.withOpacity(0.08), height: 16),
+        Divider(color: sidebarFg.withOpacity(0.08), height: 16),
         const SizedBox(height: 8),
 
-        Text("RESTORE SPECIFIC SNAPSHOT", style: TextStyle(color: primaryText, fontSize: 10, fontWeight: FontWeight.bold)),
+        Text("RESTORE SPECIFIC SNAPSHOT", style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
         Text(
           "Forces the workbench to go back in time to a specific Snapshot using its unique identifier.",
-          style: TextStyle(color: secondaryText, fontSize: 11),
+          style: TextStyle(color: sidebarFg, fontSize: 11),
         ),
         const SizedBox(height: 10),
 
@@ -798,7 +799,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           children: [
             TextField(
               controller: _pullIdController,
-              style: TextStyle(color: primaryText, fontSize: 11, fontFamily: 'monospace'),
+              style: TextStyle(color: sidebarFg, fontSize: 11, fontFamily: 'monospace'),
               cursorColor: statusColor,
               onTap: () {
                 setState(() => _showIdSuggestions = true);
@@ -809,7 +810,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
               },
               decoration: InputDecoration(
                 hintText: "Enter or select full Snapshot ID...",
-                hintStyle: TextStyle(color: mutedText, fontSize: 11, fontFamily: 'sans-serif'),
+                hintStyle: TextStyle(color: sidebarFg, fontSize: 11, fontFamily: 'sans-serif'),
                 filled: true,
                 fillColor: tabActiveBg,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -825,7 +826,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                   icon: Icon(
                     _showIdSuggestions ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, 
                     size: 14, 
-                    color: secondaryText
+                    color: sidebarFg
                   ),
                   padding: EdgeInsets.zero,
                   onPressed: () {
@@ -876,13 +877,13 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           title: Text(
                             msg,
-                            style: TextStyle(color: primaryText, fontSize: 11, fontWeight: FontWeight.w500),
+                            style: TextStyle(color: sidebarFg, fontSize: 11, fontWeight: FontWeight.w500),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           subtitle: Text(
                             "ID: $shortId",
-                            style: TextStyle(color: statusColor, fontSize: 10, fontFamily: 'monospace'),
+                            style: TextStyle(color: sidebarFg, fontSize: 10, fontFamily: 'monospace'),
                           ),
                           onTap: () {
                             setState(() {
@@ -902,7 +903,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                 padding: const EdgeInsets.all(6.0),
                 child: Text(
                   "Loading available snapshots from VCS...",
-                  style: TextStyle(color: mutedText, fontSize: 10, fontStyle: FontStyle.italic),
+                  style: TextStyle(color: sidebarFg, fontSize: 10, fontStyle: FontStyle.italic),
                 ),
               ),
             ],
@@ -915,8 +916,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           height: 32,
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: statusColor.withOpacity(0.15),
-              foregroundColor: statusColor,
+              backgroundColor: elementBg.withOpacity(0.15),
+              foregroundColor: sidebarFg,
               elevation: 0,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
@@ -939,19 +940,19 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
         ),
         
         const SizedBox(height: 16),
-        Divider(color: primaryText.withOpacity(0.08), height: 16),
+        Divider(color: sidebarFg.withOpacity(0.08), height: 16),
         const SizedBox(height: 8),
 
-        Text("SECURITY DECRYPTION BOUND", style: TextStyle(color: mutedText, fontSize: 9, fontWeight: FontWeight.bold)),
+        Text("SECURITY DECRYPTION BOUND", style: TextStyle(color: sidebarFg, fontSize: 9, fontWeight: FontWeight.bold)),
         const SizedBox(height: 6),
         TextField(
           controller: _pullPasswordController,
           obscureText: _obscurePullPassword,
-          style: TextStyle(color: primaryText, fontSize: 12),
+          style: TextStyle(color: sidebarFg, fontSize: 12),
           cursorColor: statusColor,
           decoration: InputDecoration(
             hintText: "Vault decryption key...",
-            hintStyle: TextStyle(color: mutedText, fontSize: 11),
+            hintStyle: TextStyle(color: sidebarFg, fontSize: 11),
             filled: true,
             fillColor: tabActiveBg,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -974,12 +975,12 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildHistoryTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color statusColor) {
+  Widget _buildHistoryTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color statusColor, Color sidebarFg) {
     if (_parsedLogs.isEmpty) {
       return Center(
         child: Text(
           "No snapshot logs found.",
-          style: TextStyle(color: mutedText, fontSize: 12, fontStyle: FontStyle.italic),
+          style: TextStyle(color: sidebarFg, fontSize: 12, fontStyle: FontStyle.italic),
         ),
       );
     }
@@ -1040,7 +1041,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
           child: Container(
             margin: const EdgeInsets.symmetric(vertical: 5.0, horizontal: 2.0),
             decoration: BoxDecoration(
-              color: elementBg,
+              color: secondaryText,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: primaryText.withOpacity(0.04)),
             ),
@@ -1048,8 +1049,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
               data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 clipBehavior: Clip.antiAlias,
-                iconColor: statusColor,
-                collapsedIconColor: secondaryText,
+                iconColor: sidebarFg,
+                collapsedIconColor: sidebarFg,
                 title: Row(
                   children: [
                     Container(
@@ -1061,7 +1062,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                       child: Text(
                         shortId,
                         style: TextStyle(
-                          color: statusColor,
+                          color: sidebarFg,
                           fontFamily: 'monospace',
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -1072,7 +1073,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                     Expanded(
                       child: Text(
                         (log["message"] as String?)?.isNotEmpty == true ? log["message"] as String : "No message",
-                        style: TextStyle(color: primaryText, fontSize: 12, fontWeight: FontWeight.w600),
+                        style: TextStyle(color: sidebarFg, fontSize: 12, fontWeight: FontWeight.w600),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -1085,11 +1086,11 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                     children: [
                       Text(
                         "by ${(log["author"] as String?) ?? 'Unknown'}",
-                        style: TextStyle(color: secondaryText, fontSize: 10),
+                        style: TextStyle(color: sidebarFg, fontSize: 10),
                       ),
                       Text(
                         (log["date"] as String?) ?? "",
-                        style: TextStyle(color: mutedText, fontSize: 9),
+                        style: TextStyle(color: sidebarFg, fontSize: 9),
                       ),
                     ],
                   ),
@@ -1100,12 +1101,12 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Divider(color: primaryText.withOpacity(0.06), height: 10),
+                        Divider(color: sidebarFg.withOpacity(0.06), height: 10),
                         
                         if ((log["changesSummary"] as String?)?.isNotEmpty == true) ...[
                           Text(
                             "Summary: ${log["changesSummary"]}",
-                            style: TextStyle(color: secondaryText, fontSize: 10, fontWeight: FontWeight.w500),
+                            style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.w500),
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -1124,7 +1125,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                                 ),
                                 child: Text(
                                   "${entry.key}: ${entry.value}",
-                                  style: TextStyle(color: primaryText.withOpacity(0.8), fontSize: 9),
+                                  style: TextStyle(color: sidebarFg.withOpacity(0.8), fontSize: 9),
                                 ),
                               );
                             }).toList(),
@@ -1134,7 +1135,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
 
                         Text(
                           "AFFECTED FILES (${files.length})",
-                          style: TextStyle(color: mutedText, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                          style: TextStyle(color: sidebarFg, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                         ),
                         const SizedBox(height: 4),
 
@@ -1169,7 +1170,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                                     Expanded(
                                       child: Text(
                                         file["path"] ?? "",
-                                        style: TextStyle(color: primaryText.withOpacity(0.85), fontSize: 11, fontFamily: 'monospace'),
+                                        style: TextStyle(color: sidebarFg.withOpacity(0.85), fontSize: 11, fontFamily: 'monospace'),
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
@@ -1235,7 +1236,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
     }
   }
 
-  Widget _buildStatsTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color statusColor) {
+  Widget _buildStatsTab(Color primaryText, Color secondaryText, Color mutedText, Color elementBg, Color statusColor, Color sidebarFg) {
     final extensions = (_parsedStats["extensions"] as Map<String, dynamic>?) ?? {};
 
     return SingleChildScrollView(
@@ -1252,15 +1253,15 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
             childAspectRatio: 2.2,
             physics: const NeverScrollableScrollPhysics(),
             children: [
-              _buildStatCard("Snapshots", (_parsedStats["totalCommits"] ?? 0).toString(), Icons.history, elementBg, statusColor, primaryText, mutedText),
-              _buildStatCard("Tracked Files", (_parsedStats["filesTracked"] ?? 0).toString(), Icons.folder_zip_outlined, elementBg, statusColor, primaryText, mutedText),
+              _buildStatCard("Snapshots", (_parsedStats["totalCommits"] ?? 0).toString(), Icons.history, elementBg, statusColor, primaryText, mutedText, sidebarFg),
+              _buildStatCard("Tracked Files", (_parsedStats["filesTracked"] ?? 0).toString(), Icons.folder_zip_outlined, elementBg, statusColor, primaryText, mutedText, sidebarFg),
             ],
           ),
           const SizedBox(height: 8),
-          _buildStatCard("Vault Size on Disk", (_parsedStats["vaultSize"] ?? "0 GB").toString(), Icons.sd_storage_outlined, elementBg, statusColor, primaryText, mutedText, isWide: true),
+          _buildStatCard("Vault Size on Disk", (_parsedStats["vaultSize"] ?? "0 GB").toString(), Icons.sd_storage_outlined, elementBg, statusColor, primaryText, mutedText, sidebarFg, isWide: true),
           
           const SizedBox(height: 16),
-          Text("PREDICTIVE & HEALTH METRICS", style: TextStyle(color: secondaryText, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text("PREDICTIVE & HEALTH METRICS", style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
 
           Container(
@@ -1268,23 +1269,23 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
             decoration: BoxDecoration(color: elementBg, borderRadius: BorderRadius.circular(4)),
             child: Column(
               children: [
-                _buildStatDetailRow("Growth Trend", _parsedStats["growthTrend"] ?? "N/A", primaryText, secondaryText),
+                _buildStatDetailRow("Growth Trend", _parsedStats["growthTrend"] ?? "N/A", primaryText, secondaryText, sidebarFg),
                 Divider(color: primaryText.withOpacity(0.04), height: 12),
-                _buildStatDetailRow("Integrity Coverage", _parsedStats["integrityCoverage"] ?? "N/A", primaryText, secondaryText),
+                _buildStatDetailRow("Integrity Coverage", _parsedStats["integrityCoverage"] ?? "N/A", primaryText, secondaryText, sidebarFg),
                 Divider(color: primaryText.withOpacity(0.04), height: 12),
-                _buildStatDetailRow("Largest Snapshot", _parsedStats["largestSnapshot"] ?? "N/A", primaryText, secondaryText),
+                _buildStatDetailRow("Largest Snapshot", _parsedStats["largestSnapshot"] ?? "N/A", primaryText, secondaryText, sidebarFg),
               ],
             ),
           ),
 
           const SizedBox(height: 16),
-          Text("FILE DISTRIBUTION", style: TextStyle(color: secondaryText, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text("FILE DISTRIBUTION", style: TextStyle(color: sidebarFg, fontSize: 10, fontWeight: FontWeight.bold)),
           const SizedBox(height: 6),
 
           if (extensions.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8.0),
-              child: Text("No extension telemetry detected.", style: TextStyle(color: mutedText, fontSize: 11, fontStyle: FontStyle.italic)),
+              child: Text("No extension telemetry detected.", style: TextStyle(color: sidebarFg, fontSize: 11, fontStyle: FontStyle.italic)),
             )
           else
             ...extensions.entries.map((entry) {
@@ -1302,8 +1303,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(entry.key, style: TextStyle(color: primaryText, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
-                        Text("$count files (${pctValue.toStringAsFixed(1)}%)", style: TextStyle(color: secondaryText, fontSize: 10, fontFamily: 'monospace')),
+                        Text(entry.key, style: TextStyle(color: sidebarFg, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                        Text("$count files (${pctValue.toStringAsFixed(1)}%)", style: TextStyle(color: sidebarFg, fontSize: 10, fontFamily: 'monospace')),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -1313,7 +1314,7 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
                         value: progressValue,
                         minHeight: 5,
                         backgroundColor: primaryText.withOpacity(0.03),
-                        valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                        valueColor: AlwaysStoppedAnimation<Color>(sidebarFg),
                       ),
                     )
                   ],
@@ -1325,17 +1326,17 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildStatDetailRow(String label, String value, Color pText, Color sText) {
+  Widget _buildStatDetailRow(String label, String value, Color pText, Color sText, Color sFg) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: sText, fontSize: 11)),
-        Text(value, style: TextStyle(color: pText, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
+        Text(label, style: TextStyle(color: sFg, fontSize: 11)),
+        Text(value, style: TextStyle(color: sFg, fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color bg, Color accent, Color pText, Color mText, {bool isWide = false}) {
+  Widget _buildStatCard(String label, String value, IconData icon, Color bg, Color accent, Color pText, Color mText, Color sFg, {bool isWide = false}) {
     return Container(
       width: isWide ? double.infinity : null,
       padding: const EdgeInsets.all(8.0),
@@ -1349,8 +1350,8 @@ class _VcsPanelState extends State<VcsPanel> with SingleTickerProviderStateMixin
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(value, style: TextStyle(color: pText, fontSize: 13, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
-                Text(label, style: TextStyle(color: mText, fontSize: 9), overflow: TextOverflow.ellipsis),
+                Text(value, style: TextStyle(color: sFg, fontSize: 13, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                Text(label, style: TextStyle(color: sFg, fontSize: 9), overflow: TextOverflow.ellipsis),
               ],
             ),
           )
