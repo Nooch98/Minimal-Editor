@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:codeeditor/utils/open_file.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
@@ -8,6 +9,7 @@ class FileTreeItem extends StatefulWidget {
   final VoidCallback onAction;
   final Map<String, dynamic> uiColors;
   final int depth;
+  final List<OpenFile> openFiles;
 
   const FileTreeItem({
     super.key,
@@ -15,6 +17,7 @@ class FileTreeItem extends StatefulWidget {
     required this.onFileTap,
     required this.onAction,
     required this.uiColors,
+    required this.openFiles,
     this.depth = 0,
   });
 
@@ -26,6 +29,15 @@ class _FileTreeItemState extends State<FileTreeItem> {
   bool _isExpanded = false;
   bool _isLoading = false;
   List<FileSystemEntity>? _children;
+
+  @override
+  void didUpdateWidget(covariant FileTreeItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.openFiles != oldWidget.openFiles) {
+      setState(() {}); 
+    }
+  }
+  
 
   void _showNameDialog(bool isFolder) {
     showDialog(
@@ -207,6 +219,11 @@ class _FileTreeItemState extends State<FileTreeItem> {
   Widget build(BuildContext context) {
     final isFile = widget.entity is File;
     final name = p.basename(widget.entity.path);
+    final openFileEntry = widget.openFiles.firstWhere(
+      (f) => f.file.path == widget.entity.path,
+      orElse: () => OpenFile(file: File(''), content: ''),
+    );
+    final bool isDirty = openFileEntry.file.path.isNotEmpty && openFileEntry.isDirty;
 
     Color themeForegroundColor;
     if (widget.uiColors["sidebarForeground"] != null) {
@@ -251,6 +268,18 @@ class _FileTreeItemState extends State<FileTreeItem> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (isDirty) 
+                Padding(
+                  padding: const EdgeInsets.only(left: 4.0),
+                  child: Text(
+                    "M", 
+                    style: TextStyle(
+                      color: Colors.orangeAccent,
+                      fontSize: 10, 
+                      fontWeight: FontWeight.bold
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -293,6 +322,7 @@ class _FileTreeItemState extends State<FileTreeItem> {
         onFileTap: widget.onFileTap,
         onAction: widget.onAction,
         uiColors: widget.uiColors,
+        openFiles: widget.openFiles,
         depth: widget.depth + 1,
       )).toList(),
     );
