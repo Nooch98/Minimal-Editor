@@ -3,7 +3,7 @@ import 'package:codeeditor/utils/search_match.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
-class SearchPanel extends StatelessWidget {
+class SearchPanel extends StatefulWidget {
   final Map<String, dynamic> uiColors;
   final List<SearchMatch> results;
   final bool isSearching;
@@ -20,9 +20,16 @@ class SearchPanel extends StatelessWidget {
   });
 
   @override
+  State<SearchPanel> createState() => _SearchPanelState();
+}
+
+class _SearchPanelState extends State<SearchPanel> {
+  String _currentQuery = "";
+
+  @override
   Widget build(BuildContext context) {
     Color resolve(String key, Color fallback) {
-      final value = uiColors[key];
+      final value = widget.uiColors[key];
       if (value is Color) return value;
       if (value is int) return Color(value);
       if (value is String) {
@@ -48,19 +55,17 @@ class SearchPanel extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               "SEARCH",
-              style: TextStyle(
-                color: fg.withOpacity(0.6),
-                fontSize: 11,
-                letterSpacing: 0.5,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(color: fg.withOpacity(0.6), fontSize: 11, letterSpacing: 0.5, fontWeight: FontWeight.bold),
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: TextField(
-            onChanged: onSearch,
+            onChanged: (val) {
+              setState(() => _currentQuery = val);
+              widget.onSearch(val);
+            },
             style: TextStyle(color: fg, fontSize: 13),
             cursorColor: accent,
             decoration: InputDecoration(
@@ -69,74 +74,64 @@ class SearchPanel extends StatelessWidget {
               filled: true,
               fillColor: bg.withOpacity(0.5),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
-                borderSide: BorderSide(color: fg.withOpacity(0.2)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(4),
-                borderSide: BorderSide(color: accent, width: 1.5),
-              ),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: fg.withOpacity(0.2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: accent, width: 1.5)),
             ),
           ),
         ),
         const SizedBox(height: 8),
-        if (isSearching)
-          LinearProgressIndicator(
-            minHeight: 2,
-            backgroundColor: bg,
-            valueColor: AlwaysStoppedAnimation<Color>(accent),
-          )
+        if (widget.isSearching)
+          LinearProgressIndicator(minHeight: 2, backgroundColor: bg, valueColor: AlwaysStoppedAnimation<Color>(accent))
         else
           const SizedBox(height: 2),
-          
         const SizedBox(height: 8),
         Expanded(
-          child: ListView.builder(
-            itemCount: results.length,
-            itemBuilder: (context, index) {
-              final match = results[index];
-              final fileName = p.basename(match.file.path);
-
-              return InkWell(
-                onTap: () => onFileTap(match.file, match.lineNumber),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.description, size: 12, color: fg.withOpacity(0.7)),
-                          const SizedBox(width: 6),
-                          Text(
-                            fileName, 
-                            style: TextStyle(
-                              color: fg, 
-                              fontSize: 12, 
-                              fontWeight: FontWeight.bold
-                            )
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 18),
-                        child: Text(
-                          "L${match.lineNumber}: ${match.lineContent.trim()}",
-                          style: TextStyle(color: fg.withOpacity(0.7), fontSize: 11),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+          child: widget.results.isEmpty && !widget.isSearching
+              ? Center(child: Text("No results", style: TextStyle(color: fg.withOpacity(0.3))))
+              : ListView.builder(
+                  itemCount: widget.results.length,
+                  itemBuilder: (context, index) {
+                    final match = widget.results[index];
+                    return InkWell(
+                      onTap: () => widget.onFileTap(match.file, match.lineNumber),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Icon(Icons.description, size: 12, color: fg.withOpacity(0.7)),
+                              const SizedBox(width: 6),
+                              Text(p.basename(match.file.path), style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.bold)),
+                            ]),
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 18),
+                              child: _buildHighlightedText("L${match.lineNumber}: ${match.lineContent.trim()}", _currentQuery, fg.withOpacity(0.7), accent.withOpacity(0.4)),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
+  }
+
+  Widget _buildHighlightedText(String text, String query, Color baseColor, Color highlightColor) {
+    if (query.isEmpty) return Text(text, style: TextStyle(color: baseColor, fontSize: 11));
+    final regExp = RegExp(RegExp.escape(query), caseSensitive: false);
+    final matches = regExp.allMatches(text);
+    final spans = <TextSpan>[];
+    int start = 0;
+    for (final match in matches) {
+      spans.add(TextSpan(text: text.substring(start, match.start)));
+      spans.add(TextSpan(text: text.substring(match.start, match.end), style: TextStyle(backgroundColor: highlightColor, fontWeight: FontWeight.bold, color: baseColor)));
+      start = match.end;
+    }
+    spans.add(TextSpan(text: text.substring(start)));
+    return RichText(text: TextSpan(style: TextStyle(color: baseColor, fontSize: 11, fontFamily: 'monospace'), children: spans), maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
