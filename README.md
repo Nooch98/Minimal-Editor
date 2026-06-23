@@ -113,6 +113,32 @@ To customize the editor, simply modify the `settings.json` file. Here is an exam
 * **Efficient Editing:** Powered by Monaco Editor, providing industry-standard syntax highlighting without the bloat of a full IDE.
 * **Dynamic Theming:** Seamless UI integration that adapts to your custom color schemes.
 
+## AI Chat Agent (Experimental)
+
+Minimal Editor now includes an integrated AI Chat Agent designed to assist with code navigation, file analysis, and project exploration.
+
+**Status: 🟢 Very Early / Experimental**
+
+This feature is currently in its early stages of development. It is designed to operate as an autonomous agent that can interact with your file system to help you understand your codebase better. While the agent is in a "green" experimental state and may have limitations in complex reasoning, it provides a powerful, modular foundation for AI-assisted development.
+
+### How it Works
+The AI Agent utilizes a flexible provider-agnostic infrastructure. It is equipped with basic tool-calling capabilities (`[LS]` to list, `[READ]` to read, `[ASK]` for human help) and can be configured to communicate with various backend services.
+
+### Compatibility & Providers
+You can configure the agent to use your preferred inference engine via the settings panel:
+* **Local Models:** Seamless integration with **Ollama** or **LM Studio** for offline, private development.
+* **Cloud APIs:** Built-in support for major providers, including **OpenAI**, **Anthropic**, and the **Google Gemini API**.
+
+
+https://github.com/user-attachments/assets/c493f731-ce99-4ec3-8d86-40ee8a8a42bf
+
+
+> [!IMPORTANT]
+> **Testing Environment:** While the architecture is designed to be provider-agnostic, initial testing and stabilization have been performed primarily using **LM Studio** and **Gemma 4 (e4b)**. I actively working on refining the agent's interaction loop for cloud-based providers.
+
+> [!WARNING]
+> Being in an early experimental stage, the agent's ability to navigate deep or highly complex file structures may be limited. I encourage users to test different models and providers to find the balance between cost, performance, and reasoning capability that best fits their workflow.
+
 ## Tech Stack
 
 * **Frontend:** Flutter (Desktop-optimized).
