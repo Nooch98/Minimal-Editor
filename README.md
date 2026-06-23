@@ -128,6 +128,8 @@ The AI Agent utilizes a flexible provider-agnostic infrastructure. It is equippe
 You can configure the agent to use your preferred inference engine via the settings panel:
 * **Local Models:** Seamless integration with **Ollama** or **LM Studio** for offline, private development.
 * **Cloud APIs:** Built-in support for major providers, including **OpenAI**, **Anthropic**, and the **Google Gemini API**.
+> [!NOTE]
+> Cloud APIs are not currently available in the settings panel. They will be soon.
 
 
 https://github.com/user-attachments/assets/c493f731-ce99-4ec3-8d86-40ee8a8a42bf
