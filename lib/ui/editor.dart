@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:codeeditor/ui/breadcrum_bar.dart';
+import 'package:codeeditor/ui/chat_panle.dart';
 import 'package:codeeditor/ui/git_panel.dart';
 import 'package:codeeditor/ui/search_panel.dart';
 import 'package:codeeditor/ui/vcs_panel.dart';
@@ -16,7 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 
-enum SidebarView { explorer, search, vcs, git, clipboard }
+enum SidebarView { explorer, search, vcs, git, clipboard, iachat }
 
 class EditorScaffold extends StatefulWidget {
   const EditorScaffold({super.key});
@@ -78,6 +79,30 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   void dispose() {
     _debounceTimer?.cancel();
     super.dispose();
+  }
+
+  List<String> get projectFilePaths {
+    if (_currentRootPath == null) return [];
+
+    final gitignoreFile = File('$_currentRootPath/.gitignore');
+    List<String> ignoredPatterns = ['.git', '.dart_tool', 'build', '.packages', '.pub']; 
+    
+    if (gitignoreFile.existsSync()) {
+      final lines = gitignoreFile.readAsLinesSync();
+      ignoredPatterns.addAll(lines.where((l) => l.isNotEmpty && !l.startsWith('#')));
+    }
+
+    return _allFiles
+        .map((e) {
+          String path = e.path.replaceFirst(_currentRootPath!, '');
+          return path.replaceAll('\\', '/').replaceAll(RegExp(r'^[\/\\]+'), '');
+        })
+        .where((path) {
+          if (path.isEmpty) return false;
+          return !ignoredPatterns.any((pattern) => path.contains(pattern));
+        })
+        .take(150)
+        .toList();
   }
 
   void _setupWatcher() {
@@ -1041,6 +1066,24 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                           }
                         }),
                       ),
+                      const SizedBox(height: 10),
+                      IconButton(
+                        icon: Icon(
+                          Icons.smart_toy_outlined,
+                          color: _isSidebarVisible && _currentSidebarView == SidebarView.iachat
+                              ? getForeground("sidebar") 
+                              : getForeground("sidebar")
+                        ),
+                        tooltip: "AI Assistant",
+                        onPressed: () => setState(() {
+                          if (_isSidebarVisible && _currentSidebarView == SidebarView.iachat) {
+                            _isSidebarVisible = false;
+                          } else {
+                            _isSidebarVisible = true;
+                            _currentSidebarView = SidebarView.iachat;
+                          }
+                        }),
+                      ),
                       const Spacer(),
                       PopupMenuButton<String>(
                         icon: Icon(Icons.settings, color: getForeground("activityBar"), size: 22),
@@ -1066,7 +1109,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                 if (_isSidebarVisible) ...[
                   Container(
                     width: _sidebarWidth,
-                    color: Color(_uiColors["sidebar"]),
+                    color: Color(_uiColors["sidebar"] ?? 0xFF252526),
                     child: _currentSidebarView == SidebarView.explorer
                         ? Column(
                             children: [
@@ -1133,11 +1176,12 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                                       )
                                     : ListView(
                                         children: _rootEntities.map((e) => FileTreeItem(
-                                              entity: e,
-                                              onFileTap: _openFile,
-                                              onAction: _refreshFolder,
-                                              uiColors: _uiColors,
-                                            )).toList(),
+                                          entity: e,
+                                          onFileTap: _openFile,
+                                          onAction: _refreshFolder,
+                                          openFiles: _openFiles,
+                                          uiColors: _uiColors,
+                                        )).toList(),
                                       ),
                               ),
                             ],
@@ -1166,51 +1210,64 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                                         rootPath: _currentRootPath,
                                         uiColors: _uiColors,
                                       )
-                                    : Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Padding(
-                                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                                            child: Text("CLIPBOARD HISTORY", style: TextStyle(color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF).withOpacity(0.7), fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.bold)),
+                                    : _currentSidebarView == SidebarView.iachat
+                                        ? ChatPanel(
+                                          uiColors: _uiColors,
+                                          rootPath: _currentRootPath,
+                                          projectFiles: projectFilePaths,
+                                          getActiveFileContent: () {
+                                            if (_openFiles.isEmpty || _activeTabIndex < 0 || _activeTabIndex >= _openFiles.length) {
+                                              return "No active file.";
+                                            }
+                                            return _openFiles[_activeTabIndex].content;
+                                          },
+                                          readFile: (filePath) async {
+                                            try {
+                                              final file = File('$_currentRootPath/$filePath');
+                                              if (await file.exists()) {
+                                                return await file.readAsString();
+                                              }
+                                              return "Error: File '$filePath' not found in project.";
+                                            } catch (e) {
+                                              return "Error reading file: $e";
+                                            }
+                                          },
+                                          onAgentAction: (action, arg) {
+                                            debugPrint("Agent requested action: $action with $arg - Ignoring.");
+                                          },
+                                        )
+                                        : Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                                                child: Text("CLIPBOARD HISTORY", style: TextStyle(color: Color(_uiColors["sidebarForeground"] ?? 0xFFFFFFFF).withOpacity(0.7), fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.bold)),
+                                              ),
+                                              const Divider(color: Colors.black26, height: 1),
+                                              Expanded(
+                                                child: _clipboardHistory.isEmpty
+                                                    ? Center(child: Text("History is empty", style: TextStyle(color: mutedSidebar, fontSize: 12, fontStyle: FontStyle.italic)))
+                                                    : ListView.builder(
+                                                        itemCount: _clipboardHistory.length,
+                                                        itemBuilder: (context, index) {
+                                                          final text = _clipboardHistory[index];
+                                                          return ListTile(
+                                                            title: Text(text.replaceAll('\n', ' ').trim(), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: sidebarForeground, fontSize: 12, fontFamily: 'monospace')),
+                                                            subtitle: Text("${text.length} chars", style: TextStyle(color: mutedSidebar, fontSize: 10)),
+                                                            trailing: IconButton(
+                                                              icon: Icon(Icons.delete_outline, size: 14, color: mutedSidebar),
+                                                              padding: EdgeInsets.zero,
+                                                              constraints: const BoxConstraints(),
+                                                              onPressed: () => setState(() => _clipboardHistory.removeAt(index)),
+                                                            ),
+                                                            dense: true,
+                                                            onTap: () => _pasteFromHistory(text),
+                                                          );
+                                                        },
+                                                      ),
+                                              ),
+                                            ],
                                           ),
-                                          const Divider(color: Colors.black26, height: 1),
-                                          Expanded(
-                                            child: _clipboardHistory.isEmpty
-                                                ? Center(
-                                                    child: Text(
-                                                      "History is empty",
-                                                      style: TextStyle(color: mutedSidebar, fontSize: 12, fontStyle: FontStyle.italic),
-                                                    ),
-                                                  )
-                                                : ListView.builder(
-                                                    itemCount: _clipboardHistory.length,
-                                                    itemBuilder: (context, index) {
-                                                      final text = _clipboardHistory[index];
-                                                      return ListTile(
-                                                        title: Text(
-                                                          text.replaceAll('\n', ' ').trim(),
-                                                          maxLines: 2,
-                                                          overflow: TextOverflow.ellipsis,
-                                                          style: TextStyle(color: sidebarForeground, fontSize: 12, fontFamily: 'monospace'),
-                                                        ),
-                                                        subtitle: Text(
-                                                          "${text.length} chars",
-                                                          style: TextStyle(color: mutedSidebar, fontSize: 10),
-                                                        ),
-                                                        trailing: IconButton(
-                                                          icon: Icon(Icons.delete_outline, size: 14, color: mutedSidebar),
-                                                          padding: EdgeInsets.zero,
-                                                          constraints: const BoxConstraints(),
-                                                          onPressed: () => setState(() => _clipboardHistory.removeAt(index)),
-                                                        ),
-                                                        dense: true,
-                                                        onTap: () => _pasteFromHistory(text),
-                                                      );
-                                                    },
-                                                  ),
-                                          ),
-                                        ],
-                                      ),
                   ),
                   MouseRegion(
                     cursor: SystemMouseCursors.resizeColumn,
@@ -1290,7 +1347,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                               _saveSettings();
                             });
                             _webViewController?.addJavaScriptHandler(handlerName: 'onEditorReady', callback: (args) { _isEditorInitialized = true; _applySavedConfig(); });
-                            _webViewController?.addJavaScriptHandler(handlerName: 'onContentChanged', callback: (args) { if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) setState(() => _openFiles[_activeTabIndex].isDirty = true); });
+                            _webViewController?.addJavaScriptHandler(handlerName: 'onContentChanged', callback: (args) { if (_activeTabIndex != -1 && !_openFiles[_activeTabIndex].isDirty) { setState(() {_openFiles = List.from(_openFiles); _openFiles[_activeTabIndex].isDirty = true;});}});
                             _webViewController?.addJavaScriptHandler(handlerName: 'onSaveCommand', callback: (args) => _saveFile());
                             _webViewController?.addJavaScriptHandler(handlerName: 'onCursorChanged', callback: (args) { final int line = args[0]['line'] ?? 1; final int column = args[0]['column'] ?? 1; _cursorPositionNotifier.value = (line, column); });
                             _webViewController?.addJavaScriptHandler(handlerName: 'onMarkersChanged', callback: (args) { setState(() => _errorCount = args[0]); });
