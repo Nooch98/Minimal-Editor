@@ -113,33 +113,41 @@ To customize the editor, simply modify the `settings.json` file. Here is an exam
 * **Efficient Editing:** Powered by Monaco Editor, providing industry-standard syntax highlighting without the bloat of a full IDE.
 * **Dynamic Theming:** Seamless UI integration that adapts to your custom color schemes.
 
-## AI Chat Agent (Experimental)
+## 🤖 AI Chat Agent (Experimental)
 
-Minimal Editor now includes an integrated AI Chat Agent designed to assist with code navigation, file analysis, and project exploration.
+Minimal Editor now includes an integrated AI Chat Agent designed to act as your autonomous coding collaborator. By leveraging a local-first, modular architecture, the agent assists with deep code navigation, file analysis, and project exploration directly within your workspace.
 
-**Status: 🟢 Very Early / Experimental**
+**Status: 🟢 Experimental (Active Development)**
 
-This feature is currently in its early stages of development. It is designed to operate as an autonomous agent that can interact with your file system to help you understand your codebase better. While the agent is in a "green" experimental state and may have limitations in complex reasoning, it provides a powerful, modular foundation for AI-assisted development.
+### 🧠 Core Capabilities
+The agent operates via a structured **Thought-Action-Observation** loop, allowing it to reason about your project requirements before executing changes.
 
-### How it Works
-The AI Agent utilizes a flexible provider-agnostic infrastructure. It is equipped with basic tool-calling capabilities (`[LS]` to list, `[READ]` to read, `[ASK]` for human help) and can be configured to communicate with various backend services.
+* **Autonomous Navigation:** Uses `[LS]` and `[READ]` to build a contextual map of your codebase.
+* **Safety-First Execution:** Implements a controlled `[WRITE]` protocol, ensuring the agent remains a tool *under your supervision*.
+* **Provider-Agnostic:** Built to be model-agnostic. Use local inference engines for total privacy or cloud APIs for advanced reasoning.
 
-### Compatibility & Providers
-You can configure the agent to use your preferred inference engine via the settings panel:
-* **Local Models:** Seamless integration with **Ollama** or **LM Studio** for offline, private development.
-* **Cloud APIs:** Built-in support for major providers, including **OpenAI**, **Anthropic**, and the **Google Gemini API**.
-> [!NOTE]
-> Cloud APIs are not currently available in the settings panel. They will be soon.
+### ⚙️ Compatibility & Providers
+Configure your preferred engine via the **Settings Panel**:
+
+| Model Type | Recommended Providers |
+| :--- | :--- |
+| **Local (Private)** | **Ollama**, **LM Studio** |
+| **Cloud (High-Reasoning)** | **Google Gemini API**, **Anthropic Claude**, **OpenAI** |
 
 
 https://github.com/user-attachments/assets/c493f731-ce99-4ec3-8d86-40ee8a8a42bf
 
 
-> [!IMPORTANT]
-> **Testing Environment:** While the architecture is designed to be provider-agnostic, initial testing and stabilization have been performed primarily using **LM Studio** and **Gemma 4 (e4b)**. I actively working on refining the agent's interaction loop for cloud-based providers.
+### 🛡️ Safety & Guardrails
+As an autonomous experimental feature, i prioritize user control:
+* **Human-in-the-Loop:** The agent defaults to `[ASK]` mode for critical changes, ensuring you approve major refactors.
+* **Sandboxed Reasoning:** The agent's scope is strictly bounded to the project root to ensure system security.
+
+> [!NOTE]
+> **Performance Optimization:** While the architecture supports a wide range of models, I recommend models with high instruction-following capabilities. Initial stabilization and testing have been performed primarily using **LM Studio** and **Gemma 4 (e4b)**.
 
 > [!WARNING]
-> Being in an early experimental stage, the agent's ability to navigate deep or highly complex file structures may be limited. I encourage users to test different models and providers to find the balance between cost, performance, and reasoning capability that best fits their workflow.
+> This is an experimental feature. Autonomous agents may occasionally produce unexpected results when navigating highly complex file structures. I recommend using this tool in projects under version control (Git) to easily revert any unintended suggestions.
 
 ## Tech Stack
 
