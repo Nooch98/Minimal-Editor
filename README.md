@@ -115,39 +115,43 @@ To customize the editor, simply modify the `settings.json` file. Here is an exam
 
 ## 🤖 AI Chat Agent (Experimental)
 
-Minimal Editor now includes an integrated AI Chat Agent designed to act as your autonomous coding collaborator. By leveraging a local-first, modular architecture, the agent assists with deep code navigation, file analysis, and project exploration directly within your workspace.
+Minimal Editor now features an integrated **Autonomous AI Agent**, designed to assist with deep code navigation, project analysis, and file manipulation directly within your workspace. 
 
 **Status: 🟢 Experimental (Active Development)**
 
-### 🧠 Core Capabilities
-The agent operates via a structured **Thought-Action-Observation** loop, allowing it to reason about your project requirements before executing changes.
+### 🧠 How It Works
+The agent is built on a custom, modular architecture that bridges the gap between LLM reasoning and native system execution using the **Model Context Protocol (MCP)** principles:
 
-* **Autonomous Navigation:** Uses `[LS]` and `[READ]` to build a contextual map of your codebase.
-* **Safety-First Execution:** Implements a controlled `[WRITE]` protocol, ensuring the agent remains a tool *under your supervision*.
-* **Provider-Agnostic:** Built to be model-agnostic. Use local inference engines for total privacy or cloud APIs for advanced reasoning.
+* **Thought-Action-Observation Loop:** The agent follows a structured workflow, analyzing your file structure (`ls`), reading context (`read_file`), and executing precise modifications (`write_file` / `append_file`) only when necessary.
+* **Safety-First Protocol:** Unlike standard chat agents, our implementation uses strict JSON-based tool-calling. This eliminates hallucinated syntax and ensures that every interaction is logged, validated, and sandboxed within your project directory.
+* **Loop Prevention:** Equipped with a "Task Complete" signaling system, the agent is designed to self-terminate immediately upon achieving its goal, preventing the infinite command loops typical of autonomous agents.
 
-### ⚙️ Compatibility & Providers
-Configure your preferred engine via the **Settings Panel**:
+**See it in action:**
+A quick demo showing the agent navigating the workspace, verifying file content, and performing a safe, non-destructive append operation.
 
-| Model Type | Recommended Providers |
+https://github.com/user-attachments/assets/a08916a8-d887-4800-811d-1fa27980a452
+
+
+### ⚙️ Capabilities
+| Action | Description |
 | :--- | :--- |
-| **Local (Private)** | **Ollama**, **LM Studio** |
-| **Cloud (High-Reasoning)** | **Google Gemini API**, **Anthropic Claude**, **OpenAI** |
-
+| **Context Analysis** | Reads and maps project files to understand architecture. |
+| **Surgical Updates** | Uses `append_file` and `write_file` to perform specific code maintenance. |
+| **Self-Correction** | Responds to system feedback to refine its own execution steps. |
 
 https://github.com/user-attachments/assets/c493f731-ce99-4ec3-8d86-40ee8a8a42bf
 
-
 ### 🛡️ Safety & Guardrails
-As an autonomous experimental feature, i prioritize user control:
-* **Human-in-the-Loop:** The agent defaults to `[ASK]` mode for critical changes, ensuring you approve major refactors.
+As an autonomous experimental feature, I prioritize user control:
+* **JSON-Only Communication:** The agent is strictly forbidden from using non-standard output, ensuring high reliability in tool execution.
+* **Non-Destructive Operations:** Through the usage of the `append_file` primitive, the agent is discouraged from performing full-file overwrites unless explicitly instructed.
 * **Sandboxed Reasoning:** The agent's scope is strictly bounded to the project root to ensure system security.
 
 > [!NOTE]
-> **Performance Optimization:** While the architecture supports a wide range of models, I recommend models with high instruction-following capabilities. Initial stabilization and testing have been performed primarily using **LM Studio** and **Gemma 4 (e4b)**.
+> **Pro-Tip:** While the agent is model-agnostic, best results are achieved with models that exhibit strong JSON instruction-following capabilities. Initial stabilization was performed using **Gemma 2** and **Claude 3.5 Sonnet**.
 
 > [!WARNING]
-> This is an experimental feature. Autonomous agents may occasionally produce unexpected results when navigating highly complex file structures. I recommend using this tool in projects under version control (Git) to easily revert any unintended suggestions.
+> Since this is an experimental feature, I highly recommend using this tool in projects under version control (Git). This allows you to effortlessly revert changes if the agent's autonomous path differs from your expectations.
 
 ## Tech Stack
 
