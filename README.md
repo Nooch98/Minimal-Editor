@@ -129,7 +129,7 @@ The agent is built on a custom, modular architecture that bridges the gap betwee
 **See it in action:**
 A quick demo showing the agent navigating the workspace, verifying file content, and performing a safe, non-destructive append operation.
 
-https://github.com/user-attachments/assets/a08916a8-d887-4800-811d-1fa27980a452
+https://github.com/user-attachments/assets/e58a60de-7b1b-434c-9553-52e42e26cff8
 
 
 ### ⚙️ Capabilities
