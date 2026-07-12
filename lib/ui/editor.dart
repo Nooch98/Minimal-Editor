@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:codeeditor/services/ai_service.dart';
 import 'package:codeeditor/ui/breadcrum_bar.dart';
 import 'package:codeeditor/ui/chat_panle.dart';
 import 'package:codeeditor/ui/git_panel.dart';
@@ -52,8 +53,11 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   bool _isCommandPaletteVisible = false;
   List<Command> _allCommands = []; 
   List<Command> _filteredCommands = [];
+  final TextEditingController _baseUrlController = TextEditingController(text: 'http://localhost:1234');
+  final TextEditingController _modelController = TextEditingController(text: 'gemma-4-e4b');
+  final TextEditingController _apiKeyController = TextEditingController();
 
-  Map<String, dynamic> _uiColors = {
+  final Map<String, dynamic> _uiColors = {
     "bg": 0xFF1e1e1e,
     "sidebar": 0xFF252526,
     "tabBar": 0xFF252526,
@@ -73,11 +77,15 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     _loadSavedThemes();
     _loadInitialSettings();
     _loadSession();
+    _loadSettings();
   }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _baseUrlController.dispose();
+    _modelController.dispose();
+    _apiKeyController.dispose();
     super.dispose();
   }
 
@@ -188,6 +196,24 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     
     await _loadUiColors(_currentTheme);
     _updateEditorConfig();
+  }
+
+  Future<void> _loadSettings() async {
+    if (_currentRootPath == null) return;
+    final file = File('${_currentRootPath}${Platform.pathSeparator}agent_settings.json');
+    
+    if (await file.exists()) {
+      try {
+        final data = jsonDecode(await file.readAsString());
+        setState(() {
+          _baseUrlController.text = data['baseUrl'] ?? 'http://localhost:1234';
+          _modelController.text = data['model'] ?? 'gemma-4-e4b';
+          _apiKeyController.text = data['apiKey'] ?? '';
+        });
+      } catch (e) { 
+        debugPrint("Error loading settings in editor: $e"); 
+      }
+    }
   }
 
   Future<void> _applySavedConfig() async {
@@ -719,16 +745,13 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     return Container(
       height: 25,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      color: Color(_uiColors["statusBar"] ?? 0x007acc), 
+      color: Color(_uiColors["statusBar"] ?? 0x007acc),
       child: Row(
         children: [
           if (_gitBranch.isNotEmpty) ...[
             Icon(Icons.account_tree_rounded, size: 13, color: Colors.white.withOpacity(0.85)),
             const SizedBox(width: 4),
-            Text(
-              _gitBranch,
-              style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 12, fontWeight: FontWeight.w500),
-            ),
+            Text(_gitBranch, style: TextStyle(color: Colors.white.withOpacity(0.95), fontSize: 12, fontWeight: FontWeight.w500)),
             const SizedBox(width: 15),
           ],
           if (_errorCount > 0)
@@ -736,28 +759,30 @@ class _EditorScaffoldState extends State<EditorScaffold> {
               padding: const EdgeInsets.only(right: 12),
               child: Row(
                 children: [
-                  const Icon(Icons.error, size: 14, color: Colors.white70), 
+                  const Icon(Icons.error, size: 14, color: Colors.white70),
                   const SizedBox(width: 4),
-                  Text("$_errorCount", style: const TextStyle(color: Colors.white, fontSize: 12))
+                  Text("$_errorCount", style: const TextStyle(color: Colors.white, fontSize: 12)),
                 ],
               ),
             ),
+          
           Text(
             _activeTabIndex != -1 && _activeTabIndex < _openFiles.length
-                ? p.extension(_openFiles[_activeTabIndex].file.path).replaceAll('.', '').toUpperCase() 
+                ? p.extension(_openFiles[_activeTabIndex].file.path).replaceAll('.', '').toUpperCase()
                 : "TEXT",
             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
           ),
-          
-          const Spacer(),          
+
+          const Spacer(),
+
           const Text("UTF-8", style: TextStyle(color: Colors.white70, fontSize: 12)),
           const SizedBox(width: 15),
-          
+
           ValueListenableBuilder<(int line, int col)>(
             valueListenable: _cursorPositionNotifier,
             builder: (context, position, child) {
               return Text(
-                "Ln ${position.$1}, Col ${position.$2}", 
+                "Ln ${position.$1}, Col ${position.$2}",
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               );
             },
@@ -771,28 +796,55 @@ class _EditorScaffoldState extends State<EditorScaffold> {
     if (!_isCommandPaletteVisible) return const SizedBox.shrink();
 
     return Positioned(
-      top: 60,
-      left: MediaQuery.of(context).size.width * 0.25,
-      width: MediaQuery.of(context).size.width * 0.5,
+      top: 80,
+      left: MediaQuery.of(context).size.width * 0.3,
+      width: MediaQuery.of(context).size.width * 0.4,
       child: Material(
-        elevation: 10,
-        color: Color(_uiColors["sidebar"] ?? 0x333333),
-        borderRadius: BorderRadius.circular(6),
+        elevation: 20,
+        color: Color(_uiColors["sidebar"] ?? 0x252526),
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: _commandController,
-              focusNode: _commandFocusNode,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: TextField(
+                controller: _commandController,
+                focusNode: _commandFocusNode,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: const InputDecoration(
+                  hintText: "Escribe un comando...",
+                  hintStyle: TextStyle(color: Colors.white38),
+                  border: InputBorder.none,
+                  prefixIcon: Icon(Icons.search, color: Colors.white38, size: 18),
+                ),
+                onChanged: (v) => setState(() {}),
+              ),
             ),
-            const Divider(height: 1, color: Colors.white24),
-            ListView.builder(
-              shrinkWrap: true,
-              itemCount: _filteredCommands.length,
-              itemBuilder: (context, index) => ListTile(
-                title: Text(_filteredCommands[index].label, style: const TextStyle(color: Colors.white)),
-                onTap: () {
-                  _filteredCommands[index].action();
+            const Divider(height: 1, color: Colors.white12),
+            
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: _filteredCommands.length,
+                itemBuilder: (context, index) {
+                  final cmd = _filteredCommands[index];
+                  return InkWell(
+                    onTap: () {
+                      cmd.action();
+                      setState(() => _isCommandPaletteVisible = false);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Text(
+                        cmd.label,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ),
+                  );
                 },
               ),
             ),
@@ -816,8 +868,7 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   Future<void> _pickFile() async {
     try {
       FilePickerResult? result = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'js', 'dart', 'html', 'css', 'txt', 'md', 'txt', 'rs', 'go', 'jsx', 'py', 'ps1', 'sh', 'bat'],
+        type: FileType.any,
       );
 
       if (result != null && result.files.single.path != null) {
@@ -833,7 +884,6 @@ class _EditorScaffoldState extends State<EditorScaffold> {
   }
 
   void _toggleCommandPalette() {
-    print("Toggle Command Palette: $_isCommandPaletteVisible -> ${!_isCommandPaletteVisible}");
     setState(() {
       _isCommandPaletteVisible = !_isCommandPaletteVisible;
       if (_isCommandPaletteVisible) {
@@ -1336,6 +1386,38 @@ class _EditorScaffoldState extends State<EditorScaffold> {
                           initialData: InAppWebViewInitialData(data: WebAssets.htmlContent),
                           onWebViewCreated: (controller) {
                             _webViewController = controller;
+                            _webViewController?.addJavaScriptHandler(
+                              handlerName: 'requestCompletion',
+                              callback: (args) async {
+                                final String codeBefore = args[0]['codeBefore'] ?? "";
+                                final String codeAfter = args[0]['codeAfter'] ?? "";
+
+                                final completion = await AIService.getInlineCompletion(
+                                  baseUrl: _baseUrlController.text,
+                                  model: _modelController.text,
+                                  apiKey: _apiKeyController.text,
+                                  codeBefore: codeBefore,
+                                  codeAfter: codeAfter,
+                                );
+
+                                if (completion != null && completion.isNotEmpty) {
+                                  final String cleanCompletion = completion.replaceFirst(RegExp(r'^[\n\r]+'), '');
+                                  final String escaped = cleanCompletion
+                                      .replaceAll('\\', '\\\\')
+                                      .replaceAll("'", "\\'")
+                                      .replaceAll('"', '\\"')
+                                      .replaceAll('\n', '\\n')
+                                      .replaceAll('\r', '\\r')
+                                      .replaceAll('\t', '\\t');
+
+                                  final String jsCode = "window.applyGhostText('$escaped');";
+                                  
+                                  _webViewController?.evaluateJavascript(source: jsCode);
+                                } else {
+                                  _webViewController?.evaluateJavascript(source: "window.applyGhostText('');");
+                                }
+                              },
+                            );
                             _webViewController?.addJavaScriptHandler(handlerName: 'onSettingsChanged', callback: (args) {
                               final Map<String, dynamic> newConfig = args[0];
                               setState(() {

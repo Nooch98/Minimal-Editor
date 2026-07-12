@@ -6,6 +6,9 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:codeeditor/services/chat_service.dart';
 import 'package:http/http.dart' as http;
 import 'package:markdown/markdown.dart' as md;
+import 'package:shelf/shelf.dart';
+import 'package:shelf/shelf_io.dart' as io;
+import 'package:shelf_router/shelf_router.dart' as shelf_router;
 
 class ChatPanel extends StatefulWidget {
   final Map<String, dynamic> uiColors;
@@ -37,6 +40,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _pendingSystemOutput = "";
+  bool _writeCompleted = false;
 
   final TextEditingController _apiKeyController = TextEditingController();
   String _selectedProvider = 'ChatGPT';
@@ -45,13 +49,104 @@ class _ChatPanelState extends State<ChatPanel> {
   final Map<String, TextEditingController> _controllers = {
     'model': TextEditingController(text: 'gemma-4-e4b'),
     'baseUrl': TextEditingController(text: 'http://localhost:1234'),
+    'mcpUrl': TextEditingController(text: 'http://127.0.0.1:8080'),
   };
 
   @override
   void initState() {
     super.initState();
+    _startMcpServer();
     _loadSettings();
     _loadChatHistory();
+  }
+
+  Future<void> _startMcpServer() async {
+    final app = shelf_router.Router();
+
+    app.post('/mcp/call', (Request request) async {
+      try {
+        final body = await request.readAsString();
+        final payload = jsonDecode(body);
+        final String tool = payload['tool'];
+        final Map<String, dynamic> args = payload['args'];
+
+        final result = await _executeLocalTool(tool, args);
+        
+        return Response.ok(
+          jsonEncode({"result": result}), 
+          headers: {'Content-Type': 'application/json'}
+        );
+      } catch (e) {
+        return Response.internalServerError(body: jsonEncode({"error": e.toString()}));
+      }
+    });
+
+    await io.serve(app, '127.0.0.1', 8080);
+    debugPrint("Servidor MCP interno corriendo en puerto 8080");
+  }
+
+  Future<String> _executeLocalTool(String tool, Map<String, dynamic> args) async {
+    switch (tool) {
+      case "read_file":
+        final String path = args['path'] ?? '';
+        if (path.isEmpty) return "ERROR: No path.";
+        return await widget.readFile(path);
+
+      case "ls":
+        final dir = Directory(_toAbsolutePath(args['path'] ?? "."));
+        if (await dir.exists()) {
+          final entities = await dir.list().map((e) => e.path.split(Platform.pathSeparator).last).toList();
+          return entities.join(', ');
+        }
+        return "Directory not found.";
+
+      case "write_file":
+        try {
+          final String path = args['path'] ?? '';
+          final String content = args['content'] ?? "";
+          final bool append = args['append'] == true;
+          final File file = File(_toAbsolutePath(path));
+          
+          if (!await file.exists()) return "ERROR: File not found.";
+
+          if (append) {
+            await file.writeAsString("\n$content", mode: FileMode.append);
+            return "SUCCESS: Line appended to '$path'. TASK COMPLETE.";
+          } else {
+            String currentContent = await file.readAsString();
+            if (currentContent == content) {
+              return "SUCCESS: Content already matches. TASK COMPLETE.";
+            }
+            await file.writeAsString(content);
+            return "SUCCESS: File '$path' updated. TASK COMPLETE.";
+          }
+        } catch (e) {
+          return "ERROR: Could not write: $e";
+        }
+
+      case "append_file":
+          try {
+            final String path = args['path'] ?? '';
+            final String content = args['content'] ?? "";
+            final File file = File(_toAbsolutePath(path));
+            
+            if (!await file.exists()) return "ERROR: File not found.";
+            
+            await file.writeAsString("\n$content", mode: FileMode.append);
+            return "SUCCESS: Line appended. TASK COMPLETE.";
+          } catch (e) {
+            return "ERROR: $e";
+          }
+
+      case "exec":
+        final String command = args['command'] ?? "";
+        final result = await Process.run(Platform.isWindows ? 'cmd' : '/bin/sh', 
+            [Platform.isWindows ? '/c' : '-c', command], workingDirectory: widget.rootPath);
+        return "Output: ${result.stdout}\nExit code: ${result.exitCode}";
+
+      default:
+        return "Tool '$tool' not recognized.";
+    }
   }
 
   Future<void> _clearChatHistory() async {
@@ -68,6 +163,7 @@ class _ChatPanelState extends State<ChatPanel> {
       "provider": _selectedProvider,
       "apiKey": _apiKeyController.text,
       "baseUrl": _controllers['baseUrl']!.text,
+      "mcpUrl": _controllers['mcpUrl']!.text,
       "model": _controllers['model']!.text,
     };
     await _settingsFile.writeAsString(jsonEncode(settings));
@@ -81,6 +177,7 @@ class _ChatPanelState extends State<ChatPanel> {
           _selectedProvider = data['provider'] ?? 'ChatGPT';
           _apiKeyController.text = data['apiKey'] ?? '';
           _controllers['baseUrl']!.text = data['baseUrl'] ?? 'http://localhost:1234';
+          _controllers['mcpUrl']!.text = data['mcpUrl'] ?? 'http://127.0.0.1:8080';
           _controllers['model']!.text = data['model'] ?? 'gemma-4-e4b';
         });
       } catch (e) { debugPrint("Error loading settings: $e"); }
@@ -129,6 +226,23 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
+  Future<String> _callMcpTool(String toolName, Map<String, dynamic> args) async {
+    try {
+      final response = await http.post(
+        Uri.parse(_controllers['mcpUrl']!.text + '/mcp/call'), 
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({"tool": toolName, "args": args}),
+      );
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body)['result'].toString();
+      }
+      return "Error MCP: ${response.statusCode}";
+    } catch (e) {
+      return "Error de conexión MCP: $e";
+    }
+  }
+
   Future<void> _sendMessage([bool isAuto = false, String? autoContent]) async {
     final text = autoContent ?? _chatController.text.trim();
     if (text.isEmpty && !isAuto) return;
@@ -146,23 +260,24 @@ class _ChatPanelState extends State<ChatPanel> {
 
     try {
       final baseUrl = _controllers['baseUrl']!.text.replaceAll(RegExp(r'\/$'), '');
-      final String activeFileContent = widget.getActiveFileContent?.call() ?? "No hay archivo activo.";
       
       final history = ChatService.messages;
       final recentMessages = history.length > 15 ? history.sublist(history.length - 15) : history;
 
       final String systemInstructions = """
         You are an expert autonomous software engineer.
-        Working Directory (ROOT): ${widget.rootPath}
-        Available Project Files: ${widget.projectFiles.join(', ')}
-        Active File: $activeFileContent
+        You have access to MCP tools.
         
-        INSTRUCTIONS: 
-        1. Use [LS] path, [READ] path, [WRITE] path | content, or [EXEC] command.
-        2. For any terminal command requested by the user, extract the exact command and wrap it in [EXEC] <command>.
-        3. If you are unsure about the safety of a command, ask the user for confirmation first.
-        4. Always explain your reasoning before executing any command.
-        """;
+        RULES:
+        1. DO NOT USE ANY TAGS LIKE <|tool_call|>. 
+        2. Output ONLY raw JSON when calling tools: { "tool": "tool_name", "args": { ... } }
+        3. ALWAYS read a file first using 'read_file' before attempting to modify it.
+        4. IF the file already contains the information you are trying to add, DO NOT write to it.
+        5. WHEN UPDATING FILES:
+          - Use { "tool": "write_file", "args": { "path": "filename", "content": "new_line", "append": true } } to add content to the END of a file.
+          - Use { "tool": "write_file", "args": { "path": "filename", "content": "full_file_content" } } ONLY if you intend to completely replace the file content.
+        6. AFTER any tool execution, if the task is complete, stop immediately. Do not loop 'ls' or 'read_file'.
+      """;
 
       final List<Map<String, String>> messages = [{"role": "system", "content": systemInstructions}];
       messages.addAll(recentMessages.map((m) => {"role": m["role"] == "ai" ? "assistant" : "user", "content": m["content"]!}));
@@ -194,48 +309,74 @@ class _ChatPanelState extends State<ChatPanel> {
     }
   }
 
-  void _parseAgentResponse(String response) {
-    if (response.contains("call:ls")) {
-      _handleList("ls");
-      return;
-    }
-    if (response.contains("call:read")) {
-      final pathMatch = RegExp(r"path:(.*?)[\} ]").firstMatch(response);
-      if (pathMatch != null) {
-        _handleRead("[READ] ${pathMatch.group(1)!.trim()}");
-        return;
-      }
-    }
+  void _parseAgentResponse(String response) async {
+    String cleanResponse = response
+        .replaceAll('<|tool_call>', '')
+        .replaceAll('<tool_call|>', '')
+        .trim();
 
-    if (response.contains("[WRITE]")) {
-      final match = RegExp(r"\[WRITE\] (.+?) \| (.*)", dotAll: true).firstMatch(response);
-      if (match != null) {
-        setState(() => _pendingWriteAction = {"path": match.group(1)!.trim(), "content": match.group(2)!.trim()});
-        return;
-      }
-    }
-    
-    if (response.contains("[READ]")) {
-      _handleRead(response);
-      return;
-    } 
-    
-    if (response.contains("[LS]")) {
-      _handleList(response);
-      return;
-    }
+    final jsonMatches = RegExp(r'\{.*?"tool".*?\}', dotAll: true).allMatches(cleanResponse);
 
-    if (response.contains("call:exec")) {
-      final match = RegExp(r"command:(.*?)[\} ]").firstMatch(response);
-      if (match != null) {
-        _handleExec(match.group(1)!.trim());
+    if (jsonMatches.isNotEmpty) {
+      List<String> results = [];
+
+      for (final match in jsonMatches) {
+        String jsonString = match.group(0)!;        
+        int openBraces = '{'.allMatches(jsonString).length;
+        int closeBraces = '}'.allMatches(jsonString).length;
+        while (openBraces > closeBraces) {
+          jsonString += '}';
+          closeBraces++;
+        }
+        
+        try {
+          Map<String, dynamic> json = jsonDecode(jsonString);
+          final Map<String, dynamic> toolData = json.containsKey('call') ? json['call'] : json;
+          
+          String tool = toolData['tool']?.toString().toLowerCase() ?? "";
+          Map<String, dynamic> rawArgs = Map<String, dynamic>.from(toolData['args'] ?? {});
+
+          if (tool == 'fs' || tool == 'filesystem' || tool == 'file_manager' || tool == 'mcp') {
+            if (rawArgs.containsKey('command')) tool = 'exec';
+            else if (rawArgs.containsKey('read')) { tool = 'read_file'; rawArgs['path'] = rawArgs['read']; }
+            else tool = 'ls';
+          } else if (tool.contains('write') || tool == 'save') {
+              tool = 'write_file';
+          } else if (tool == 'list' || tool == 'list_files' || tool == 'list_directory') {
+            tool = 'ls';
+          } else if (tool == 'append' || tool == 'append_file') {
+            tool = 'append_file';
+          }
+
+          if (!['append_file', 'read_file', 'ls', 'exec'].contains(tool)) {
+              results.add("Result of $tool: ERROR. write_file is disabled. Use append_file.");
+              continue;
+          }
+
+          Map<String, dynamic> args = {};
+          args['path'] = rawArgs['path'] ?? rawArgs['filename'] ?? rawArgs['file'] ?? '.';
+          if (rawArgs.containsKey('content')) args['content'] = rawArgs['content'];
+          if (rawArgs.containsKey('command')) args['command'] = rawArgs['command'];
+
+          debugPrint("Executing tool: $tool with args: $args");
+          final result = await _callMcpTool(tool, args);
+          results.add("Result of $tool: $result");
+          
+        } catch (e) {
+          debugPrint("JSON Error: $e");
+        }
+      }
+
+      if (results.isNotEmpty) {
+        String summary = results.join("\n");
+        if (summary.contains("TASK COMPLETE")) {
+          _finalizeResponse("Task completed: $summary");
+          return;
+        }
+        _pendingSystemOutput = "MCP TOOL RESULTS:\n$summary";
+        _sendMessage(true);
         return;
       }
-    }
-    if (response.contains("[EXEC]")) {
-      final cmd = response.split("[EXEC]").last.trim().split('\n').first;
-      _handleExec(cmd);
-      return;
     }
 
     _finalizeResponse(response);
@@ -498,6 +639,7 @@ class _ChatPanelState extends State<ChatPanel> {
         const SizedBox(height: 10),
         _buildTextField(label: "API Key (Optional)", controller: _apiKeyController, obscure: true),
         _buildTextField(label: "Base URL", controller: _controllers['baseUrl']!),
+        _buildTextField(label: "MCP URL", controller: _controllers['mcpUrl']!),
         _buildTextField(label: "Model ID", controller: _controllers['model']!),
         const SizedBox(height: 20),
         ElevatedButton(
